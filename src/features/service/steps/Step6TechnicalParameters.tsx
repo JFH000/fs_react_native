@@ -80,7 +80,11 @@ export function Step6TechnicalParameters() {
       superheatAfter: after.superheat !== null ? String(after.superheat) : "",
       subcoolingAfter: after.subcooling !== null ? String(after.subcooling) : "",
       roomEvapDeltaAfter: after.roomEvapDelta !== null ? String(after.roomEvapDelta) : "",
-      thermodynamicDiagnosis: after.hasSufficientData ? after.summaryDiagnosis : before.summaryDiagnosis,
+      thermodynamicDiagnosis: after.hasSufficientData
+        ? after.summaryDiagnosis
+        : before.hasSufficientData
+          ? before.summaryDiagnosis
+          : "",
     });
   }
 
@@ -96,7 +100,7 @@ export function Step6TechnicalParameters() {
   });
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       {CALC_FIELDS.map((field) => (
         <View key={field.beforeKey} className="mb-2">
           <Text className="text-sm font-semibold mb-1">{field.label}</Text>

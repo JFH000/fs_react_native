@@ -16,7 +16,7 @@ export function Step3EquipmentData() {
   const updateEquipment = useServiceWizardStore((state) => state.updateEquipment);
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       <TextInput testID="equipment-type-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Tipo de equipo" value={equipment.type} onChangeText={(type) => updateEquipment({ type })} />
       <TextInput testID="equipment-brand-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Marca" value={equipment.brand} onChangeText={(brand) => updateEquipment({ brand })} />
       <TextInput testID="equipment-model-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Modelo" value={equipment.model} onChangeText={(model) => updateEquipment({ model })} />

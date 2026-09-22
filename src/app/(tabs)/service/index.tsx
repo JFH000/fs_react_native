@@ -35,6 +35,7 @@ export default function ServiceDashboardScreen() {
       </View>
       <FlatList
         testID="visits-list"
+        className="flex-1"
         data={visits}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text className="mx-4 text-neutral-500">Todavía no hay visitas registradas.</Text>}

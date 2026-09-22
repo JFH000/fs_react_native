@@ -24,7 +24,7 @@ export function Step4Photos() {
   }
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       {PHOTO_SLOTS.map((slot) => {
         const photo = photos.find((p) => p.id === `photo-${slot.key}`);
         return (

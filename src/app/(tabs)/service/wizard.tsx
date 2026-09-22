@@ -46,7 +46,9 @@ export default function ServiceWizardScreen() {
         <View className="h-1 bg-blue-600" style={{ width: `${(currentStep / WIZARD_STEP_COUNT) * 100}%` }} />
       </View>
       <Text className="text-lg font-bold p-4">{STEP_TITLES[currentStep - 1]}</Text>
-      <StepBody step={currentStep} />
+      <View className="flex-1">
+        <StepBody step={currentStep} />
+      </View>
       {validationError ? <Text className="mx-4 mb-2 text-red-600">{validationError}</Text> : null}
       <View className="flex-row justify-between p-4">
         <TouchableOpacity

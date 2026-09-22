@@ -24,7 +24,9 @@ export function Step1VisitData() {
       const gps = {
         latitude: Number(position.coords.latitude.toFixed(5)),
         longitude: Number(position.coords.longitude.toFixed(5)),
-        accuracy: position.coords.accuracy ? Math.round(position.coords.accuracy) : undefined,
+        ...(typeof position.coords.accuracy === "number" && position.coords.accuracy > 0
+          ? { accuracy: Math.round(position.coords.accuracy) }
+          : {}),
       };
       setGps(gps);
 
