@@ -20,6 +20,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-location",
         { locationWhenInUsePermission: "FS App necesita tu ubicación para registrar dónde se realizó el servicio." },
       ],
+      [
+        "expo-image-picker",
+        { cameraPermission: "FS App necesita acceso a la cámara para fotografiar evidencias de servicio." },
+      ],
     ],
   } as ExpoConfig;
   return expoConfig;
