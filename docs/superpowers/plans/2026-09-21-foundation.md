@@ -4,7 +4,7 @@
 
 **Goal:** Levantar el proyecto Expo de fs_movil con navegación, estilos, y autenticación real (email/password, Google, Apple) contra un proyecto Firebase nuevo y separado, con el modelo de datos y las reglas de seguridad del perfil de usuario ya funcionando de punta a punta.
 
-**Architecture:** Proyecto Expo (managed workflow) con Expo Router para navegación basada en archivos, NativeWind para estilos, Zustand para estado de auth, y Firebase (Auth + Firestore + Storage) con persistencia offline del SDK. Estructura por features (`src/features/*`) y utilidades compartidas (`src/shared/*`), separada de las rutas de Expo Router (`src/app/*`).
+**Architecture:** Proyecto Expo (managed workflow) con Expo Router para navegación basada en archivos, NativeWind para estilos, Zustand para estado de auth, y Firebase (Auth + Firestore) con persistencia offline del SDK. El proyecto Firebase se mantiene en el plan **Spark** (gratuito) — no se usa Cloud Storage for Firebase (requiere Blaze desde oct/2024 en proyectos nuevos); el almacenamiento de archivos queda fuera de esta fase, ver la nota en la Sección 6 del spec de diseño para la alternativa. Estructura por features (`src/features/*`) y utilidades compartidas (`src/shared/*`), separada de las rutas de Expo Router (`src/app/*`).
 
 **Tech Stack:** Expo SDK (managed), TypeScript, Expo Router, NativeWind + Tailwind CSS, Zustand, Firebase JS SDK (`firebase` v10+), `@react-native-google-signin/google-signin`, `expo-apple-authentication`, Jest (`jest-expo` preset) + `@testing-library/react-native`, `@firebase/rules-unit-testing` + Firebase Emulator Suite para las reglas.
 
@@ -20,7 +20,8 @@
 - El proyecto Firebase de fs_movil es **nuevo y separado** del proyecto Firebase de fsapp — no se reutilizan credenciales ni datos.
 - Métodos de autenticación permitidos: email/password (con verificación real de contraseña), Google Sign-In, Sign in with Apple. Ningún otro proveedor social.
 - El `docId` de cualquier documento propiedad de un usuario es siempre `request.auth.uid` de Firebase Auth, sin excepción.
-- Ninguna colección de Firestore/Storage se usa desde la app sin tener antes reglas de seguridad reales que exigan `request.auth.uid` (no `allow read, write: if true`).
+- Ninguna colección de Firestore se usa desde la app sin tener antes reglas de seguridad reales que exigan `request.auth.uid` (no `allow read, write: if true`).
+- El proyecto Firebase se mantiene en el plan **Spark** (gratuito) — no se habilita Cloud Storage for Firebase (requiere Blaze) ni Cloud Functions (siempre requiere Blaze).
 
 ---
 
@@ -370,11 +371,11 @@ git commit -m "feat: scaffold feature folders and placeholder tab screens"
 - Test: `src/shared/lib/__tests__/firebase.test.ts`
 
 **Interfaces:**
-- Produces: `import { app, auth, db, storage } from "src/shared/lib/firebase"` — usado por toda tarea futura que hable con Firebase.
+- Produces: `import { app, auth, db } from "src/shared/lib/firebase"` — usado por toda tarea futura que hable con Firebase.
 
 - [ ] **Step 1 (usuario, no el implementador): crear el proyecto Firebase (nuevo, separado del de fsapp)**
 
-Este paso requiere una cuenta de Google real y acceso a la consola web — ningún agente automatizado puede hacerlo. Lo hace el usuario, en paralelo a que el resto de esta tarea avanza como código:
+Este paso requiere una cuenta de Google real y acceso a la consola web — ningún agente automatizado puede hacerlo. Lo hace el usuario, en paralelo a que el resto de esta tarea avanza como código. **Mantener el proyecto en el plan Spark (gratuito) — no aceptar el upgrade a Blaze que la consola ofrece al habilitar algunos servicios:**
 
 ```bash
 npx firebase-tools login
@@ -384,8 +385,8 @@ npx firebase-tools projects:create fs-movil-app --display-name "FS App Movil"
 Desde la consola de Firebase (console.firebase.google.com), sobre el proyecto recién creado:
 - Habilitar **Authentication** con los proveedores Email/Password, Google, y Apple.
 - Habilitar **Firestore** (modo producción, cualquier región).
-- Habilitar **Storage**.
-- Registrar una app iOS y una app Android, descargar `GoogleService-Info.plist` y `google-services.json`, y copiar los valores de configuración web (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) para llenar el `.env` local (Step 3).
+- **No habilitar Storage** — Cloud Storage for Firebase requiere el plan Blaze en proyectos nuevos desde oct/2024; el almacenamiento de archivos de este proyecto usa un servicio externo con capa gratuita (Cloudinary) en vez de Firebase Storage, ver la Sección 6 del spec de diseño.
+- Registrar una app iOS y una app Android, descargar `GoogleService-Info.plist` y `google-services.json`, y copiar los valores de configuración web (apiKey, authDomain, projectId, messagingSenderId, appId — **no hace falta `storageBucket`**) para llenar el `.env` local (Step 3).
 
 El implementador de esta tarea NO ejecuta este paso — solo construye Steps 2-8 (SDK, `app.config.ts`, `firebase.ts`, test con mocks), que no requieren un proyecto real todavía porque `.env` no se commitea y el test mockea el SDK completo.
 
@@ -402,7 +403,6 @@ npx expo install firebase @react-native-async-storage/async-storage
 FIREBASE_API_KEY=
 FIREBASE_AUTH_DOMAIN=
 FIREBASE_PROJECT_ID=
-FIREBASE_STORAGE_BUCKET=
 FIREBASE_MESSAGING_SENDER_ID=
 FIREBASE_APP_ID=
 ```
@@ -423,7 +423,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     firebaseApiKey: process.env.FIREBASE_API_KEY,
     firebaseAuthDomain: process.env.FIREBASE_AUTH_DOMAIN,
     firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
-    firebaseStorageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
     firebaseAppId: process.env.FIREBASE_APP_ID,
   },
@@ -434,14 +433,13 @@ Cuando existen ambos `app.json` y `app.config.ts`, Expo pasa el contenido de `ap
 
 - [ ] **Step 5: Escribir `src/shared/lib/firebase.ts`**
 
-El SDK de Firebase (v10.11+, incluida la versión instalada en Task 4) detecta automáticamente React Native + `@react-native-async-storage/async-storage` (ya instalado en Step 2) y persiste la sesión sin configuración explícita — `getAuth(app)` alcanza, no hace falta el patrón antiguo de `initializeAuth`/`getReactNativePersistence` (que además no existe como export público en `firebase/auth` en esta versión):
+El SDK de Firebase (v10.11+, incluida la versión instalada en Task 4) detecta automáticamente React Native + `@react-native-async-storage/async-storage` (ya instalado en Step 2) y persiste la sesión sin configuración explícita — `getAuth(app)` alcanza, no hace falta el patrón antiguo de `initializeAuth`/`getReactNativePersistence` (que además no existe como export público en `firebase/auth` en esta versión). No se inicializa Firebase Storage — el proyecto se mantiene en el plan Spark (gratuito); el almacenamiento de archivos de fases futuras usa un servicio externo, ver la Sección 6 del spec de diseño:
 
 ```ts
 // src/shared/lib/firebase.ts
 import Constants from "expo-constants";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
 import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
 
 const extra = Constants.expoConfig?.extra ?? {};
@@ -450,7 +448,6 @@ const firebaseConfig = {
   apiKey: extra.firebaseApiKey as string,
   authDomain: extra.firebaseAuthDomain as string,
   projectId: extra.firebaseProjectId as string,
-  storageBucket: extra.firebaseStorageBucket as string,
   messagingSenderId: extra.firebaseMessagingSenderId as string,
   appId: extra.firebaseAppId as string,
 };
@@ -462,8 +459,6 @@ export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache(),
 });
-
-export const storage = getStorage(app);
 ```
 
 - [ ] **Step 6: Escribir la prueba**
@@ -482,17 +477,13 @@ jest.mock("firebase/firestore", () => ({
   initializeFirestore: jest.fn(() => ({ mocked: "firestore" })),
   persistentLocalCache: jest.fn(),
 }));
-jest.mock("firebase/storage", () => ({
-  getStorage: jest.fn(() => ({ mocked: "storage" })),
-}));
 
-import { app, auth, db, storage } from "../firebase";
+import { app, auth, db } from "../firebase";
 
-test("initializes app, auth, firestore and storage", () => {
+test("initializes app, auth and firestore", () => {
   expect(app).toBeDefined();
   expect(auth).toEqual({ mocked: "auth" });
   expect(db).toEqual({ mocked: "firestore" });
-  expect(storage).toEqual({ mocked: "storage" });
 });
 ```
 
@@ -515,13 +506,15 @@ git commit -m "feat: initialize Firebase SDK against the new fs_movil project"
 ### Task 5: Reglas de seguridad para `users/{uid}` + pruebas con el emulador
 
 **Files:**
-- Create: `firestore.rules`, `storage.rules`, `firebase.json`
+- Create: `firestore.rules`, `firebase.json`
 - Modify: `package.json` (separar la config de Jest en "projects")
 - Test: `tests/rules/firestore.rules.test.ts`
 
 **Interfaces:**
 - Consumes: ninguno de tareas anteriores.
-- Produces: reglas desplegables (`firebase deploy --only firestore:rules,storage:rules`) que toda tarea futura que agregue colecciones debe extender, nunca debilitar. También produce la convención de que **todo test que hable con el emulador de Firebase vive bajo `tests/`**, nunca bajo `src/**/__tests__/` — las tareas futuras que agreguen ese tipo de test (ej. Task 10) deben seguir esa convención.
+- Produces: reglas desplegables (`firebase deploy --only firestore:rules`) que toda tarea futura que agregue colecciones debe extender, nunca debilitar. También produce la convención de que **todo test que hable con el emulador de Firebase vive bajo `tests/`**, nunca bajo `src/**/__tests__/` — las tareas futuras que agreguen ese tipo de test (ej. Task 10) deben seguir esa convención.
+
+**Nota**: no se crean reglas de Storage — el proyecto se mantiene en el plan Spark (gratuito) y no usa Cloud Storage for Firebase (ver Task 4).
 
 - [ ] **Step 1: Instalar las dependencias del emulador**
 
@@ -574,37 +567,19 @@ service cloud.firestore {
 }
 ```
 
-- [ ] **Step 3: Escribir `storage.rules`**
-
-```
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
-
-- [ ] **Step 4: Escribir `firebase.json`**
+- [ ] **Step 3: Escribir `firebase.json`**
 
 ```json
 {
   "firestore": { "rules": "firestore.rules" },
-  "storage": { "rules": "storage.rules" },
   "emulators": {
     "auth": { "port": 9099 },
-    "firestore": { "port": 8080 },
-    "storage": { "port": 9199 }
+    "firestore": { "port": 8080 }
   }
 }
 ```
 
-- [ ] **Step 5: Escribir la prueba de reglas**
+- [ ] **Step 4: Escribir la prueba de reglas**
 
 ```ts
 // tests/rules/firestore.rules.test.ts
@@ -653,24 +628,24 @@ test("an unauthenticated request is denied", async () => {
 });
 ```
 
-- [ ] **Step 6: Correr las pruebas contra el emulador**
+- [ ] **Step 5: Correr las pruebas contra el emulador**
 
 Run: `npx firebase-tools emulators:exec --only firestore "npx jest tests/rules"`
 Expected: 3 tests, PASS (requiere Java instalado para el emulador)
 
-- [ ] **Step 7 (usuario, no el implementador): desplegar las reglas al proyecto real**
+- [ ] **Step 6 (usuario, no el implementador): desplegar las reglas al proyecto real**
 
 Requiere el project ID real que el usuario eligió al crear el proyecto en Task 4 (puede no ser exactamente `fs-movil-app` si ese nombre ya estaba tomado — los project ID de Firebase son únicos globalmente) y una sesión de `firebase-tools login` ya autenticada, ninguna de las dos cosas disponibles para el implementador. Se hace después, cuando el usuario confirme el project ID real:
 
 ```bash
-npx firebase-tools deploy --only firestore:rules,storage:rules --project <PROJECT_ID_REAL>
+npx firebase-tools deploy --only firestore:rules --project <PROJECT_ID_REAL>
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add real Firestore/Storage security rules for the users collection"
+git commit -m "feat: add real Firestore security rules for the users collection"
 ```
 
 ---
