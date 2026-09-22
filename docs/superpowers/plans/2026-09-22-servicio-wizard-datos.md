@@ -1039,7 +1039,7 @@ beforeEach(() => {
 });
 
 test("generateConsecutivo pads the sequence and uses the given year", () => {
-  expect(generateConsecutivo(4, new Date("2026-01-01"))).toBe("FS-2026-0005");
+  expect(generateConsecutivo(4, new Date(2026, 0, 1))).toBe("FS-2026-0005");
 });
 
 test("startNewVisit seeds a draft with an auto-generated consecutivo and no GPS", () => {
