@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Screen } from "../../../shared/components/Screen";
 import { useServiceWizardStore, WIZARD_STEP_COUNT } from "../../../features/service/useServiceWizardStore";
 import { StepPlaceholder } from "../../../features/service/steps/StepPlaceholder";
+import { Step1VisitData } from "../../../features/service/steps/Step1VisitData";
 
 const STEP_TITLES = [
   "Datos de Visita",
@@ -17,6 +18,7 @@ const STEP_TITLES = [
 ];
 
 function StepBody({ step }: { step: number }) {
+  if (step === 1) return <Step1VisitData />;
   return <StepPlaceholder title={STEP_TITLES[step - 1]} />;
 }
 

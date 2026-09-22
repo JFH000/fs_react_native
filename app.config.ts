@@ -12,7 +12,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
       firebaseAppId: process.env.FIREBASE_APP_ID,
     },
-    plugins: [...(config.plugins ?? []), "@react-native-google-signin/google-signin", "expo-apple-authentication"],
+    plugins: [
+      ...(config.plugins ?? []),
+      "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
+      [
+        "expo-location",
+        { locationWhenInUsePermission: "FS App necesita tu ubicación para registrar dónde se realizó el servicio." },
+      ],
+    ],
   } as ExpoConfig;
   return expoConfig;
 };
