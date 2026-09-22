@@ -541,7 +541,7 @@ npm install --save-dev @firebase/rules-unit-testing
       "displayName": "app",
       "preset": "jest-expo",
       "transformIgnorePatterns": [
-        "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
+        "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|standard-navigation)"
       ],
       "testPathIgnorePatterns": ["/node_modules/", "<rootDir>/tests/"]
     },
@@ -1336,9 +1336,9 @@ import SignInScreen from "../(auth)/sign-in";
 
 test("submits the entered email and password", async () => {
   await render(<SignInScreen />);
-  fireEvent.changeText(screen.getByTestId("email-input"), "tech@fsapp.com");
-  fireEvent.changeText(screen.getByTestId("password-input"), "secret123");
-  fireEvent.press(screen.getByTestId("email-sign-in-button"));
+  await fireEvent.changeText(screen.getByTestId("email-input"), "tech@fsapp.com");
+  await fireEvent.changeText(screen.getByTestId("password-input"), "secret123");
+  await fireEvent.press(screen.getByTestId("email-sign-in-button"));
 
   await new Promise(process.nextTick);
   expect(signInWithEmail).toHaveBeenCalledWith("tech@fsapp.com", "secret123");
