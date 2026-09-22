@@ -4,7 +4,7 @@
 
 **Goal:** Levantar el proyecto Expo de fs_movil con navegación, estilos, y autenticación real (email/password, Google, Apple) contra un proyecto Firebase nuevo y separado, con el modelo de datos y las reglas de seguridad del perfil de usuario ya funcionando de punta a punta.
 
-**Architecture:** Proyecto Expo (managed workflow) con Expo Router para navegación basada en archivos, NativeWind para estilos, Zustand para estado de auth, y Firebase (Auth + Firestore + Storage) con persistencia offline del SDK. Estructura por features (`src/features/*`) y utilidades compartidas (`src/shared/*`), separada de las rutas de Expo Router (`app/*`).
+**Architecture:** Proyecto Expo (managed workflow) con Expo Router para navegación basada en archivos, NativeWind para estilos, Zustand para estado de auth, y Firebase (Auth + Firestore + Storage) con persistencia offline del SDK. Estructura por features (`src/features/*`) y utilidades compartidas (`src/shared/*`), separada de las rutas de Expo Router (`src/app/*`).
 
 **Tech Stack:** Expo SDK (managed), TypeScript, Expo Router, NativeWind + Tailwind CSS, Zustand, Firebase JS SDK (`firebase` v10+), `@react-native-google-signin/google-signin`, `expo-apple-authentication`, Jest (`jest-expo` preset) + `@testing-library/react-native`, `@firebase/rules-unit-testing` + Firebase Emulator Suite para las reglas.
 
@@ -14,7 +14,7 @@
 
 - Expo managed workflow — sin eject a bare React Native.
 - NativeWind para todo el styling (no StyleSheet plano salvo casos que NativeWind no cubra).
-- Expo Router para toda la navegación (rutas basadas en archivos bajo `app/`).
+- Expo Router para toda la navegación (rutas basadas en archivos bajo `src/app/`).
 - Zustand para estado de UI por feature; Firestore (`onSnapshot`) es la fuente de verdad para datos remotos, no estado local duplicado.
 - Firestore debe inicializarse con `persistentLocalCache` (offline habilitado desde el día uno).
 - El proyecto Firebase de fs_movil es **nuevo y separado** del proyecto Firebase de fsapp — no se reutilizan credenciales ni datos.
@@ -27,7 +27,7 @@
 ### Task 1: Scaffold del proyecto Expo con TypeScript y testing
 
 **Files:**
-- Create: todo lo generado por `create-expo-app` (`app/`, `assets/`, `package.json`, `tsconfig.json`, `app.json`, etc.)
+- Create: todo lo generado por `create-expo-app` (`src/app/`, `assets/`, `package.json`, `tsconfig.json`, `app.json`, etc.)
 - Modify: `package.json` (scripts de test y lint)
 - Test: `src/shared/__tests__/sanity.test.ts`
 
@@ -101,8 +101,8 @@ git commit -m "chore: scaffold Expo project with TypeScript and Jest"
 ### Task 2: Configurar NativeWind
 
 **Files:**
-- Create: `tailwind.config.js`, `global.css`
-- Modify: `babel.config.js`, `metro.config.js`, `app/_layout.tsx`
+- Create: `tailwind.config.js`, `babel.config.js`, `metro.config.js` (el scaffold de Task 1 no generó estos dos — el SDK actual de Expo no los requiere hasta que algo como NativeWind los necesita)
+- Modify: `src/global.css` (Task 1 ya generó uno con variables de fuente para web — se reemplaza por las directivas de Tailwind), `src/app/_layout.tsx`
 - Test: `src/shared/components/__tests__/Screen.test.tsx`
 
 **Interfaces:**
@@ -123,14 +123,16 @@ npx tailwindcss init
 ```js
 // tailwind.config.js
 module.exports = {
-  content: ["./app/**/*.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
+  content: ["./src/**/*.{js,jsx,ts,tsx}"],
   presets: [require("nativewind/preset")],
   theme: { extend: {} },
   plugins: [],
 };
 ```
 
-- [ ] **Step 3: Crear `global.css`**
+- [ ] **Step 3: Reemplazar el contenido de `src/global.css` por las directivas de Tailwind**
+
+Task 1 generó `src/global.css` con variables de fuente para la variante web del scaffold — se reemplaza por completo, ya no se necesitan esas variables:
 
 ```css
 @tailwind base;
@@ -157,7 +159,7 @@ const { withNativeWind } = require("nativewind/metro");
 
 const config = getDefaultConfig(__dirname);
 
-module.exports = withNativeWind(config, { input: "./global.css" });
+module.exports = withNativeWind(config, { input: "./src/global.css" });
 ```
 
 - [ ] **Step 5: Escribir el componente `Screen` con NativeWind**
@@ -197,15 +199,21 @@ test("renders its children inside the safe area", () => {
 
 - [ ] **Step 7: Importar `global.css` en el layout raíz y envolverlo en `SafeAreaProvider`**
 
-`SafeAreaView` de `react-native-safe-area-context` necesita un `SafeAreaProvider` ancestro para calcular los insets correctamente en dispositivos con notch/isla dinámica — sin él, `Screen` funcionaría mal en el dispositivo real aunque su prueba unitaria pase. No reemplazar el resto del archivo que generó el scaffold de Task 1 (theme provider, splash screen, etc.) — solo agregar el import y envolver el contenido que ya retorna el componente `RootLayout`:
+`SafeAreaView` de `react-native-safe-area-context` necesita un `SafeAreaProvider` ancestro para calcular los insets correctamente en dispositivos con notch/isla dinámica — sin él, `Screen` funcionaría mal en el dispositivo real aunque su prueba unitaria pase. Después de la limpieza de Task 1, `src/app/_layout.tsx` es un `RootLayout` mínimo (`return <Slot />;`) — envolver ese `<Slot />` en `<SafeAreaProvider>`:
 
 ```tsx
-// app/_layout.tsx (agregar el import al inicio del archivo)
+// src/app/_layout.tsx
 import "../global.css";
+import { Slot } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-// envolver lo que ya retorna RootLayout() dentro de <SafeAreaProvider>, por ejemplo:
-// return <SafeAreaProvider>{contenidoExistenteDelScaffold}</SafeAreaProvider>;
+export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <Slot />
+    </SafeAreaProvider>
+  );
+}
 ```
 
 - [ ] **Step 8: Correr los tests**
@@ -225,10 +233,10 @@ git commit -m "feat: configure NativeWind and add Screen wrapper component"
 ### Task 3: Estructura de carpetas y shell de navegación (tabs vacíos)
 
 **Files:**
-- Create: `app/(auth)/sign-in.tsx`, `app/(tabs)/_layout.tsx`, `app/(tabs)/service.tsx`, `app/(tabs)/history.tsx`, `app/(tabs)/parts.tsx`, `app/(tabs)/ai.tsx`, `app/(tabs)/academy.tsx`, `app/(tabs)/profile.tsx`
+- Create: `src/app/(auth)/sign-in.tsx`, `src/app/(tabs)/_layout.tsx`, `src/app/(tabs)/service.tsx`, `src/app/(tabs)/history.tsx`, `src/app/(tabs)/parts.tsx`, `src/app/(tabs)/ai.tsx`, `src/app/(tabs)/academy.tsx`, `src/app/(tabs)/profile.tsx`
 - Create: `src/features/{auth,service,history,parts,ai,academy,profile,notifications}/.gitkeep`
 - Create: `src/shared/types/.gitkeep`, `src/shared/utils/.gitkeep`, `src/shared/lib/.gitkeep`
-- Test: `app/__tests__/tabs-layout.test.tsx`
+- Test: `src/app/__tests__/tabs-layout.test.tsx`
 
 **Interfaces:**
 - Produces: 6 rutas de tabs navegables (`/(tabs)/service`, `/(tabs)/history`, `/(tabs)/parts`, `/(tabs)/ai`, `/(tabs)/academy`, `/(tabs)/profile`), cada una con un placeholder de texto.
@@ -245,9 +253,9 @@ touch src/shared/types/.gitkeep src/shared/utils/.gitkeep src/shared/lib/.gitkee
 - [ ] **Step 2: Crear las 6 pantallas placeholder**
 
 ```tsx
-// app/(tabs)/service.tsx (repetir el patrón para history.tsx, parts.tsx, ai.tsx, academy.tsx, profile.tsx cambiando el texto)
+// src/app/(tabs)/service.tsx (repetir el patrón para history.tsx, parts.tsx, ai.tsx, academy.tsx, profile.tsx cambiando el texto)
 import { Text } from "react-native";
-import { Screen } from "../../src/shared/components/Screen";
+import { Screen } from "../../shared/components/Screen";
 
 export default function ServiceScreen() {
   return (
@@ -263,7 +271,7 @@ Repetir para `history.tsx` ("Historial — próximamente"), `parts.tsx` ("Repues
 - [ ] **Step 3: Crear el layout de tabs (sin guardas de auth todavía — se agregan en Task 8)**
 
 ```tsx
-// app/(tabs)/_layout.tsx
+// src/app/(tabs)/_layout.tsx
 import { Tabs } from "expo-router";
 
 export default function TabsLayout() {
@@ -283,9 +291,9 @@ export default function TabsLayout() {
 - [ ] **Step 4: Crear un placeholder de sign-in (se implementa de verdad en Task 9)**
 
 ```tsx
-// app/(auth)/sign-in.tsx
+// src/app/(auth)/sign-in.tsx
 import { Text } from "react-native";
-import { Screen } from "../../src/shared/components/Screen";
+import { Screen } from "../../shared/components/Screen";
 
 export default function SignInScreen() {
   return (
@@ -301,7 +309,7 @@ export default function SignInScreen() {
 `Tabs`/`Tabs.Screen` de `expo-router` esperan estar montados dentro del árbol de navegación real del router (no se pueden renderizar de forma aislada con `render()` de forma confiable). Por eso la prueba mockea `expo-router` con componentes livianos que solo registran sus props, en vez de renderizar el navegador real:
 
 ```tsx
-// app/__tests__/tabs-layout.test.tsx
+// src/app/__tests__/tabs-layout.test.tsx
 import type { ReactNode } from "react";
 import { Text } from "react-native";
 import { render, screen } from "@testing-library/react-native";
@@ -323,7 +331,7 @@ test("declares all six business module tabs", () => {
 });
 ```
 
-**Nota para Task 8**: cuando esa tarea agregue una guarda de autenticación a `app/(tabs)/_layout.tsx`, debe actualizar este mismo archivo de prueba (ver el paso correspondiente en Task 8) para que el mock de `useAuthStore` refleje un usuario autenticado — si no, esta prueba pasa a fallar porque el componente devolvería `null` antes de llegar a los tabs.
+**Nota para Task 8**: cuando esa tarea agregue una guarda de autenticación a `src/app/(tabs)/_layout.tsx`, debe actualizar este mismo archivo de prueba (ver el paso correspondiente en Task 8) para que el mock de `useAuthStore` refleje un usuario autenticado — si no, esta prueba pasa a fallar porque el componente devolvería `null` antes de llegar a los tabs.
 
 - [ ] **Step 6: Correr los tests**
 
@@ -899,13 +907,15 @@ git commit -m "feat: add auth service for email/password, Google and Apple sign-
 ### Task 8: Store de autenticación y guardas de navegación
 
 **Files:**
-- Create: `src/features/auth/useAuthStore.ts`, `app/(auth)/_layout.tsx`
-- Modify: `app/(tabs)/_layout.tsx`
-- Test: `src/features/auth/__tests__/useAuthStore.test.ts`, `app/__tests__/auth-guards.test.tsx`
+- Create: `src/features/auth/useAuthStore.ts`, `src/app/(auth)/_layout.tsx`, `src/app/index.tsx`
+- Modify: `src/app/(tabs)/_layout.tsx`
+- Test: `src/features/auth/__tests__/useAuthStore.test.ts`, `src/app/__tests__/auth-guards.test.tsx`, `src/app/__tests__/index.test.tsx`
 
 **Interfaces:**
 - Consumes: `auth` de `src/shared/lib/firebase.ts`
 - Produces: hook `useAuthStore()` devolviendo `{ user: User | null, isLoading: boolean }`, consumido por Task 9 y Task 10.
+
+**Nota de diseño**: los grupos de rutas `(auth)` y `(tabs)` no son parte de la URL resultante (`(auth)/sign-in.tsx` sirve en `/sign-in`, no en `/(auth)/sign-in`), y ninguno de los dos grupos tiene una pantalla `index`. Sin una pantalla que resuelva la ruta raíz `/`, el arranque en frío de la app no encontraría ninguna ruta que mostrar. `src/app/index.tsx` cubre exactamente ese caso (arranque en frío); las guardas de `(auth)/_layout.tsx` y `(tabs)/_layout.tsx` siguen siendo necesarias aparte, para cuando se navega o se hace deep-link directo a una ruta anidada.
 
 - [ ] **Step 1: Instalar Zustand**
 
@@ -967,9 +977,9 @@ test("updates the store when Firebase reports an auth state change", () => {
 - [ ] **Step 4: Crear el layout de auth con guarda de redirección**
 
 ```tsx
-// app/(auth)/_layout.tsx
+// src/app/(auth)/_layout.tsx
 import { Redirect, Stack } from "expo-router";
-import { useAuthStore } from "../../src/features/auth/useAuthStore";
+import { useAuthStore } from "../../features/auth/useAuthStore";
 
 export default function AuthLayout() {
   const { user, isLoading } = useAuthStore();
@@ -982,9 +992,9 @@ export default function AuthLayout() {
 - [ ] **Step 5: Agregar la guarda al layout de tabs**
 
 ```tsx
-// app/(tabs)/_layout.tsx (agregar al inicio de la función, antes del return)
+// src/app/(tabs)/_layout.tsx (agregar al inicio de la función, antes del return)
 import { Redirect, Tabs } from "expo-router";
-import { useAuthStore } from "../../src/features/auth/useAuthStore";
+import { useAuthStore } from "../../features/auth/useAuthStore";
 
 export default function TabsLayout() {
   const { user, isLoading } = useAuthStore();
@@ -1009,10 +1019,10 @@ export default function TabsLayout() {
 Esta prueba importa `useAuthStore` real (para controlar su estado con `setState`), así que también hay que mockear `firebase/auth` y `shared/lib/firebase` — si no, el registro de `onAuthStateChanged` en el import de `useAuthStore.ts` se ejecuta contra el SDK real de Firebase dentro de Jest y puede fallar de forma impredecible:
 
 ```tsx
-// app/__tests__/auth-guards.test.tsx
+// src/app/__tests__/auth-guards.test.tsx
 import { render } from "@testing-library/react-native";
 
-jest.mock("../../src/shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
 const redirectMock = jest.fn(() => null);
@@ -1022,7 +1032,7 @@ jest.mock("expo-router", () => ({
   Tabs: Object.assign(() => null, { Screen: () => null }),
 }));
 
-import { useAuthStore } from "../../src/features/auth/useAuthStore";
+import { useAuthStore } from "../../features/auth/useAuthStore";
 import TabsLayout from "../(tabs)/_layout";
 import AuthLayout from "../(auth)/_layout";
 
@@ -1043,29 +1053,75 @@ test("auth layout redirects to the service tab when a user is present", () => {
 });
 ```
 
-- [ ] **Step 7: Actualizar el test de Task 3 (`app/__tests__/tabs-layout.test.tsx`) para que siga pasando con la guarda ya agregada**
+- [ ] **Step 7: Actualizar el test de Task 3 (`src/app/__tests__/tabs-layout.test.tsx`) para que siga pasando con la guarda ya agregada**
 
 Ese test importa `TabsLayout` directamente; ahora que el componente llama a `useAuthStore()`, hay que mockear el store con un usuario autenticado para que no se quede en el `return null`/`Redirect` antes de llegar a los tabs:
 
 ```tsx
-// app/__tests__/tabs-layout.test.tsx (agregar antes del import de TabsLayout, junto al mock existente de expo-router)
-jest.mock("../../src/shared/lib/firebase", () => ({ auth: {} }));
+// src/app/__tests__/tabs-layout.test.tsx (agregar antes del import de TabsLayout, junto al mock existente de expo-router)
+jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
-jest.mock("../../src/features/auth/useAuthStore", () => ({
+jest.mock("../../features/auth/useAuthStore", () => ({
   useAuthStore: () => ({ user: { uid: "uid-1" }, isLoading: false }),
 }));
 ```
 
-- [ ] **Step 8: Correr los tests**
+- [ ] **Step 8: Crear la pantalla que resuelve la ruta raíz `/`**
 
-Run: `npm test -- useAuthStore.test.ts auth-guards.test.tsx tabs-layout.test.tsx`
-Expected: PASS (5 tests)
+```tsx
+// src/app/index.tsx
+import { Redirect } from "expo-router";
+import { useAuthStore } from "../features/auth/useAuthStore";
 
-- [ ] **Step 9: Commit**
+export default function Index() {
+  const { user, isLoading } = useAuthStore();
+  if (isLoading) return null;
+  return <Redirect href={user ? "/(tabs)/service" : "/(auth)/sign-in"} />;
+}
+```
+
+```tsx
+// src/app/__tests__/index.test.tsx
+import { render } from "@testing-library/react-native";
+
+jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
+
+const redirectMock = jest.fn(() => null);
+jest.mock("expo-router", () => ({
+  Redirect: (props: { href: string }) => redirectMock(props.href),
+}));
+
+import { useAuthStore } from "../../features/auth/useAuthStore";
+import IndexScreen from "../index";
+
+beforeEach(() => {
+  redirectMock.mockClear();
+});
+
+test("redirects to sign-in when there is no user", () => {
+  useAuthStore.setState({ user: null, isLoading: false });
+  render(<IndexScreen />);
+  expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
+});
+
+test("redirects to the service tab when a user is present", () => {
+  useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
+  render(<IndexScreen />);
+  expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
+});
+```
+
+- [ ] **Step 9: Correr todos los tests de la tarea**
+
+Run: `npm test -- useAuthStore.test.ts auth-guards.test.tsx tabs-layout.test.tsx index.test.tsx`
+Expected: PASS (7 tests)
+
+- [ ] **Step 10: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add auth store and route guards for the tabs/auth groups"
+git commit -m "feat: add auth store, route guards, and root index redirect"
 ```
 
 ---
@@ -1073,9 +1129,9 @@ git commit -m "feat: add auth store and route guards for the tabs/auth groups"
 ### Task 9: Pantallas de inicio y registro de sesión
 
 **Files:**
-- Modify: `app/(auth)/sign-in.tsx`
-- Create: `app/(auth)/sign-up.tsx`
-- Test: `app/__tests__/sign-in.test.tsx`
+- Modify: `src/app/(auth)/sign-in.tsx`
+- Create: `src/app/(auth)/sign-up.tsx`
+- Test: `src/app/__tests__/sign-in.test.tsx`
 
 **Interfaces:**
 - Consumes: `signInWithEmail`, `signInWithGoogle`, `signInWithApple` de `src/features/auth/authService.ts` (Task 7)
@@ -1083,12 +1139,12 @@ git commit -m "feat: add auth store and route guards for the tabs/auth groups"
 - [ ] **Step 1: Implementar la pantalla de inicio de sesión**
 
 ```tsx
-// app/(auth)/sign-in.tsx
+// src/app/(auth)/sign-in.tsx
 import { useState } from "react";
 import { Platform, Text, TextInput, TouchableOpacity } from "react-native";
 import { Link } from "expo-router";
-import { Screen } from "../../src/shared/components/Screen";
-import { signInWithEmail, signInWithGoogle, signInWithApple } from "../../src/features/auth/authService";
+import { Screen } from "../../shared/components/Screen";
+import { signInWithEmail, signInWithGoogle, signInWithApple } from "../../features/auth/authService";
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
@@ -1159,11 +1215,11 @@ export default function SignInScreen() {
 - [ ] **Step 2: Implementar la pantalla de registro (mismo patrón, usando `signUpWithEmail`)**
 
 ```tsx
-// app/(auth)/sign-up.tsx
+// src/app/(auth)/sign-up.tsx
 import { useState } from "react";
 import { Text, TextInput, TouchableOpacity } from "react-native";
-import { Screen } from "../../src/shared/components/Screen";
-import { signUpWithEmail } from "../../src/features/auth/authService";
+import { Screen } from "../../shared/components/Screen";
+import { signUpWithEmail } from "../../features/auth/authService";
 
 export default function SignUpScreen() {
   const [email, setEmail] = useState("");
@@ -1215,16 +1271,16 @@ export default function SignUpScreen() {
 - [ ] **Step 3: Escribir la prueba de la pantalla de inicio de sesión**
 
 ```tsx
-// app/__tests__/sign-in.test.tsx
+// src/app/__tests__/sign-in.test.tsx
 import { fireEvent, render, screen } from "@testing-library/react-native";
 
-jest.mock("../../src/features/auth/authService", () => ({
+jest.mock("../../features/auth/authService", () => ({
   signInWithEmail: jest.fn(() => Promise.resolve()),
   signInWithGoogle: jest.fn(() => Promise.resolve()),
   signInWithApple: jest.fn(() => Promise.resolve()),
 }));
 
-import { signInWithEmail } from "../../src/features/auth/authService";
+import { signInWithEmail } from "../../features/auth/authService";
 import SignInScreen from "../(auth)/sign-in";
 
 test("submits the entered email and password", async () => {
@@ -1256,14 +1312,14 @@ git commit -m "feat: add sign-in and sign-up screens"
 
 **Files:**
 - Create: `src/features/profile/profileRepository.ts`
-- Modify: `app/(tabs)/profile.tsx`, `app/_layout.tsx`
-- Test: `src/features/profile/__tests__/profileRepository.test.ts`, `app/__tests__/root-layout.test.tsx`
+- Modify: `src/app/(tabs)/profile.tsx`, `src/app/_layout.tsx`
+- Test: `src/features/profile/__tests__/profileRepository.test.ts`, `src/app/__tests__/root-layout.test.tsx`
 
 **Interfaces:**
 - Consumes: `db` de `src/shared/lib/firebase.ts`, `createEmptyUserProfile`/`AuthProvider` de `src/shared/types/user.ts`, `signOutUser` de `src/features/auth/authService.ts`, `useAuthStore` de `src/features/auth/useAuthStore.ts` (Task 8 — sin modificarlo)
 - Produces: `ensureUserProfile(uid, email, authProvider): Promise<UserProfile>` — consumido por el futuro plan de Perfil de usuario.
 
-**Nota de diseño**: la creación del perfil se dispara desde un efecto en `app/_layout.tsx` (que ninguna tarea anterior prueba), no modificando `src/features/auth/useAuthStore.ts` — así el store y sus pruebas de Task 8 quedan intactos.
+**Nota de diseño**: la creación del perfil se dispara desde un efecto en `src/app/_layout.tsx` (que ninguna tarea anterior prueba), no modificando `src/features/auth/useAuthStore.ts` — así el store y sus pruebas de Task 8 quedan intactos.
 
 - [ ] **Step 1: Escribir `profileRepository.ts`**
 
@@ -1352,17 +1408,17 @@ test("does not overwrite an existing profile document", async () => {
 Run: `npx firebase-tools emulators:exec --only firestore "npx jest profileRepository.test.ts"`
 Expected: 2 tests, PASS
 
-- [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `app/_layout.tsx`**
+- [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `src/app/_layout.tsx`**
 
 ```tsx
-// app/__tests__/root-layout.test.tsx
+// src/app/__tests__/root-layout.test.tsx
 import { render } from "@testing-library/react-native";
 import { create } from "zustand";
 
 jest.mock("expo-router", () => ({ Stack: () => null }));
 
 const ensureUserProfileMock = jest.fn(() => Promise.resolve());
-jest.mock("../../src/features/profile/profileRepository", () => ({
+jest.mock("../../features/profile/profileRepository", () => ({
   ensureUserProfile: (...args: unknown[]) => ensureUserProfileMock(...args),
 }));
 
@@ -1370,7 +1426,7 @@ const fakeAuthStore = create<{ user: unknown; isLoading: boolean }>(() => ({
   user: null,
   isLoading: false,
 }));
-jest.mock("../../src/features/auth/useAuthStore", () => ({ useAuthStore: fakeAuthStore }));
+jest.mock("../../features/auth/useAuthStore", () => ({ useAuthStore: fakeAuthStore }));
 
 import RootLayout from "../_layout";
 
@@ -1395,21 +1451,21 @@ test("ensures a profile once a user is present", () => {
 });
 ```
 
-- [ ] **Step 5: Correr la prueba y verificar que falla** (todavía no existe el efecto en `app/_layout.tsx`)
+- [ ] **Step 5: Correr la prueba y verificar que falla** (todavía no existe el efecto en `src/app/_layout.tsx`)
 
 Run: `npm test -- root-layout.test.tsx`
 Expected: FAIL (no calls to `ensureUserProfileMock`, o error de import)
 
-- [ ] **Step 6: Agregar el efecto a `app/_layout.tsx`, preservando el contenido existente del scaffold**
+- [ ] **Step 6: Agregar el efecto a `src/app/_layout.tsx`, preservando el contenido existente del scaffold**
 
 No reemplazar el archivo completo — el scaffold de Task 1 y el `import "../global.css"` de Task 2 deben seguir ahí. Agregar solo el import y el hook dentro del componente `RootLayout` ya existente:
 
 ```tsx
-// app/_layout.tsx (agregar imports y el useEffect dentro del componente RootLayout existente, antes del return)
+// src/app/_layout.tsx (agregar imports y el useEffect dentro del componente RootLayout existente, antes del return)
 import { useEffect } from "react";
-import { useAuthStore } from "../src/features/auth/useAuthStore";
-import { ensureUserProfile } from "../src/features/profile/profileRepository";
-import type { AuthProvider } from "../src/shared/types/user";
+import { useAuthStore } from "../features/auth/useAuthStore";
+import { ensureUserProfile } from "../features/profile/profileRepository";
+import type { AuthProvider } from "../shared/types/user";
 
 function resolveAuthProvider(providerId: string | undefined): AuthProvider {
   if (providerId?.includes("google")) return "google";
@@ -1435,11 +1491,11 @@ Expected: PASS (2 tests)
 - [ ] **Step 8: Implementar la pantalla de perfil mínima**
 
 ```tsx
-// app/(tabs)/profile.tsx
+// src/app/(tabs)/profile.tsx
 import { Text, TouchableOpacity } from "react-native";
-import { Screen } from "../../src/shared/components/Screen";
-import { useAuthStore } from "../../src/features/auth/useAuthStore";
-import { signOutUser } from "../../src/features/auth/authService";
+import { Screen } from "../../shared/components/Screen";
+import { useAuthStore } from "../../features/auth/useAuthStore";
+import { signOutUser } from "../../features/auth/authService";
 
 export default function ProfileScreen() {
   const user = useAuthStore((state) => state.user);
