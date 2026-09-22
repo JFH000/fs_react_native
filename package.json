@@ -38,6 +38,7 @@
     "@firebase/rules-unit-testing": "^5.0.2",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.2",
     "@types/react": "~19.2.2",
     "dotenv": "^18.0.2",
     "jest": "^30.5.2",
@@ -46,8 +47,8 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
     "lint": "tsc --noEmit"
@@ -62,7 +63,8 @@
         ],
         "testPathIgnorePatterns": [
           "/node_modules/",
-          "[/\\\\]tests[/\\\\]"
+          "[/\\\\]tests[/\\\\]",
+          "[/\\\\]\\.claude[/\\\\]"
         ],
         "moduleNameMapper": {
           "\\.css$": "<rootDir>/__mocks__/styleMock.js"
@@ -71,7 +73,11 @@
       {
         "displayName": "node",
         "testEnvironment": "node",
-        "testRegex": "tests/.*\\.test\\.ts$"
+        "testRegex": "tests/.*\\.test\\.ts$",
+        "testPathIgnorePatterns": [
+          "/node_modules/",
+          "[/\\\\]\\.claude[/\\\\]"
+        ]
       }
     ]
   },
