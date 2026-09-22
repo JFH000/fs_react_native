@@ -1362,8 +1362,8 @@ git commit -m "feat: add sign-in and sign-up screens"
 ### Task 10: Crear el perfil en Firestore al primer login + pantalla de perfil mínima
 
 **Files:**
-- Create: `src/features/profile/profileRepository.ts`
-- Modify: `src/app/(tabs)/profile.tsx`, `src/app/_layout.tsx`
+- Create: `src/features/profile/profileRepository.ts`, `__mocks__/styleMock.js` (stub para imports `.css` en tests — ver Step 4)
+- Modify: `src/app/(tabs)/profile.tsx`, `src/app/_layout.tsx`, `package.json` (agregar `moduleNameMapper` al proyecto Jest "app")
 - Test: `tests/profile/profileRepository.test.ts` (bajo `tests/`, no `src/**/__tests__/` — corre contra el emulador, ver la convención que estableció Task 5), `src/app/__tests__/root-layout.test.tsx`
 
 **Interfaces:**
@@ -1463,31 +1463,49 @@ Expected: 2 tests, PASS
 
 **Nota**: este repo tiene Java 1.8 y el emulador de Firestore requiere Java 21+ (mismo bloqueo ya conocido de Task 5) — si el emulador no arranca por esto, no es un bloqueo nuevo, es el mismo gap ya documentado. Reporta el archivo `tests/profile/profileRepository.test.ts` escrito (Step 2) y sigue con el resto de la tarea (Steps 4-9, que no dependen del emulador); no intentes instalar Java ni buscar workarounds.
 
-- [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `src/app/_layout.tsx`**
+- [ ] **Step 4: Mockear los imports `.css` en Jest, y escribir la prueba del efecto que crea el perfil en `src/app/_layout.tsx`**
+
+Este es el primer test que renderiza `RootLayout` de verdad, y `_layout.tsx` importa `"../global.css"` — Jest no sabe parsear un archivo `.css` como módulo JS, así que hace falta un `moduleNameMapper` que lo redirija a un stub vacío (solo en el proyecto `"app"`, ya que es el único que renderiza componentes RN):
+
+```js
+// __mocks__/styleMock.js
+module.exports = {};
+```
+
+```json
+// package.json (agregar dentro del proyecto "app" de la config de jest, junto a testPathIgnorePatterns)
+"moduleNameMapper": {
+  "\\.css$": "<rootDir>/__mocks__/styleMock.js"
+}
+```
+
+`_layout.tsx` (Task 2) renderiza `<Slot />`, no `<Stack />` — el mock de `expo-router` debe exportar `Slot`. Además, `mockAuthStore` no puede pasarse como valor de retorno directo de `create(...)` dentro del factory de `jest.mock` (el nombre `mock`-prefijado solo lo exime del chequeo de `babel-plugin-jest-hoist`, pero no lo agrega a las variables hoisteadas — `create(...)` no es una inicialización "pura" — así que igual explota por orden de hoisting). Se resuelve con el mismo patrón que ya usa `profileRepository.test.ts` con `db`: mockear el módulo con un valor vacío primero, y asignar el store real después vía `jest.requireMock(...)`:
 
 ```tsx
 // src/app/__tests__/root-layout.test.tsx
 import { render } from "@testing-library/react-native";
 import { create } from "zustand";
 
-jest.mock("expo-router", () => ({ Stack: () => null }));
+jest.mock("expo-router", () => ({ Slot: () => null }));
 
-const mockEnsureUserProfile = jest.fn(() => Promise.resolve());
+const mockEnsureUserProfile = jest.fn((..._args: unknown[]) => Promise.resolve());
 jest.mock("../../features/profile/profileRepository", () => ({
   ensureUserProfile: (...args: unknown[]) => mockEnsureUserProfile(...args),
 }));
 
-const fakeAuthStore = create<{ user: unknown; isLoading: boolean }>(() => ({
+jest.mock("../../features/auth/useAuthStore", () => ({ useAuthStore: undefined }));
+
+const mockAuthStore = create<{ user: unknown; isLoading: boolean }>(() => ({
   user: null,
   isLoading: false,
 }));
-jest.mock("../../features/auth/useAuthStore", () => ({ useAuthStore: fakeAuthStore }));
+jest.requireMock("../../features/auth/useAuthStore").useAuthStore = mockAuthStore;
 
 import RootLayout from "../_layout";
 
 beforeEach(() => {
   mockEnsureUserProfile.mockClear();
-  fakeAuthStore.setState({ user: null, isLoading: false });
+  mockAuthStore.setState({ user: null, isLoading: false });
 });
 
 test("does not create a profile while there is no user", async () => {
@@ -1497,7 +1515,7 @@ test("does not create a profile while there is no user", async () => {
 
 test("ensures a profile once a user is present", async () => {
   const view = await render(<RootLayout />);
-  fakeAuthStore.setState({
+  mockAuthStore.setState({
     user: { uid: "uid-1", email: "tech@fsapp.com", providerData: [{ providerId: "google.com" }] },
     isLoading: false,
   });
