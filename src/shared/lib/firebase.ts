@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { getApp, getApps, initializeApp } from "firebase/app";
+// @ts-ignore - getReactNativePersistence is available at runtime for React Native
 import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
