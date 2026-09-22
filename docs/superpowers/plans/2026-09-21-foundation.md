@@ -932,7 +932,9 @@ test("signInWithApple exchanges the Apple identityToken for a Firebase credentia
 Run: `npm test -- authService.test.ts`
 Expected: PASS (5 tests)
 
-- [ ] **Step 6: Generar un development build para poder probar los flujos nativos manualmente**
+- [ ] **Step 6 (usuario, no el implementador): generar un development build para poder probar los flujos nativos manualmente**
+
+Requiere una cuenta de Expo (EAS) autenticada (`eas login`) y, para iOS, cuenta de Apple Developer — consume minutos de build y ningún agente debe iniciarlo por su cuenta. Lo hace el usuario cuando quiera probar en dispositivo/simulador real; no bloquea el resto del código de esta tarea, que se prueba con mocks:
 
 ```bash
 npx eas build --profile development --platform all
