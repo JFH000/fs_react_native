@@ -44,8 +44,11 @@ Si pregunta por confirmar que el directorio no está vacío (ya existen `README.
 
 - [ ] **Step 2: Instalar dependencias de testing**
 
+`jest-expo` está pineado a la versión del SDK de Expo, así que se instala con `expo install`; el resto son dependencias de desarrollo normales:
+
 ```bash
-npx expo install jest-expo jest @testing-library/react-native @types/jest -- --dev
+npx expo install jest-expo
+npm install --save-dev jest @testing-library/react-native @types/jest
 ```
 
 - [ ] **Step 3: Configurar Jest en `package.json`**
