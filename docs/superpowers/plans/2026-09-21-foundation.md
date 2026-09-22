@@ -793,6 +793,8 @@ plugins: ["@react-native-google-signin/google-signin", "expo-apple-authenticatio
 
 - [ ] **Step 3: Escribir `authService.ts`**
 
+`GoogleSignin.signIn()` (en la versión instalada de `@react-native-google-signin/google-signin`) devuelve `{ type: "success" | "cancelled", data: User | null }`, no el `idToken` directo — el `idToken` vive en `response.data?.idToken`:
+
 ```ts
 // src/features/auth/authService.ts
 import {
@@ -818,7 +820,8 @@ export function signInWithEmail(email: string, password: string): Promise<UserCr
 
 export async function signInWithGoogle(): Promise<UserCredential> {
   await GoogleSignin.hasPlayServices();
-  const { idToken } = await GoogleSignin.signIn();
+  const response = await GoogleSignin.signIn();
+  const idToken = response.data?.idToken;
   if (!idToken) {
     throw new Error("Google Sign-In no devolvió un idToken");
   }
@@ -902,7 +905,10 @@ test("signInWithEmail delegates to Firebase with the given credentials", async (
 });
 
 test("signInWithGoogle exchanges the Google idToken for a Firebase credential", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: "google-id-token" });
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({
+    type: "success",
+    data: { idToken: "google-id-token" },
+  });
   await signInWithGoogle();
   expect(signInWithCredential).toHaveBeenCalledWith(
     { mocked: "auth" },
@@ -911,7 +917,7 @@ test("signInWithGoogle exchanges the Google idToken for a Firebase credential", 
 });
 
 test("signInWithGoogle throws if Google does not return an idToken", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: null });
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
   await expect(signInWithGoogle()).rejects.toThrow("idToken");
 });
 
