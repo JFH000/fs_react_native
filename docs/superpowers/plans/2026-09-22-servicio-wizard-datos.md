@@ -1253,7 +1253,9 @@ export default function ServiceWizardScreen() {
         <View className="h-1 bg-blue-600" style={{ width: `${(currentStep / WIZARD_STEP_COUNT) * 100}%` }} />
       </View>
       <Text className="text-lg font-bold p-4">{STEP_TITLES[currentStep - 1]}</Text>
-      <StepBody step={currentStep} />
+      <View className="flex-1">
+        <StepBody step={currentStep} />
+      </View>
       {validationError ? <Text className="mx-4 mb-2 text-red-600">{validationError}</Text> : null}
       <View className="flex-row justify-between p-4">
         <TouchableOpacity
@@ -1320,6 +1322,7 @@ export default function ServiceDashboardScreen() {
       </View>
       <FlatList
         testID="visits-list"
+        className="flex-1"
         data={visits}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text className="mx-4 text-neutral-500">Todavía no hay visitas registradas.</Text>}
@@ -1572,7 +1575,9 @@ export function Step1VisitData() {
       const gps = {
         latitude: Number(position.coords.latitude.toFixed(5)),
         longitude: Number(position.coords.longitude.toFixed(5)),
-        accuracy: position.coords.accuracy ? Math.round(position.coords.accuracy) : undefined,
+        ...(typeof position.coords.accuracy === "number" && position.coords.accuracy > 0
+          ? { accuracy: Math.round(position.coords.accuracy) }
+          : {}),
       };
       setGps(gps);
 
@@ -1866,7 +1871,7 @@ export function Step3EquipmentData() {
   const updateEquipment = useServiceWizardStore((state) => state.updateEquipment);
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       <TextInput testID="equipment-type-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Tipo de equipo" value={equipment.type} onChangeText={(type) => updateEquipment({ type })} />
       <TextInput testID="equipment-brand-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Marca" value={equipment.brand} onChangeText={(brand) => updateEquipment({ brand })} />
       <TextInput testID="equipment-model-input" className="mb-2 border border-neutral-300 rounded-lg p-3" placeholder="Modelo" value={equipment.model} onChangeText={(model) => updateEquipment({ model })} />
@@ -2062,7 +2067,7 @@ export function Step4Photos() {
   }
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       {PHOTO_SLOTS.map((slot) => {
         const photo = photos.find((p) => p.id === `photo-${slot.key}`);
         return (
@@ -2364,7 +2369,11 @@ export function Step6TechnicalParameters() {
       superheatAfter: after.superheat !== null ? String(after.superheat) : "",
       subcoolingAfter: after.subcooling !== null ? String(after.subcooling) : "",
       roomEvapDeltaAfter: after.roomEvapDelta !== null ? String(after.roomEvapDelta) : "",
-      thermodynamicDiagnosis: after.hasSufficientData ? after.summaryDiagnosis : before.summaryDiagnosis,
+      thermodynamicDiagnosis: after.hasSufficientData
+        ? after.summaryDiagnosis
+        : before.hasSufficientData
+          ? before.summaryDiagnosis
+          : "",
     });
   }
 
@@ -2380,7 +2389,7 @@ export function Step6TechnicalParameters() {
   });
 
   return (
-    <ScrollView className="px-4">
+    <ScrollView className="flex-1 px-4">
       {CALC_FIELDS.map((field) => (
         <View key={field.beforeKey} className="mb-2">
           <Text className="text-sm font-semibold mb-1">{field.label}</Text>
