@@ -434,14 +434,15 @@ Cuando existen ambos `app.json` y `app.config.ts`, Expo pasa el contenido de `ap
 
 - [ ] **Step 5: Escribir `src/shared/lib/firebase.ts`**
 
+El SDK de Firebase (v10.11+, incluida la versión instalada en Task 4) detecta automáticamente React Native + `@react-native-async-storage/async-storage` (ya instalado en Step 2) y persiste la sesión sin configuración explícita — `getAuth(app)` alcanza, no hace falta el patrón antiguo de `initializeAuth`/`getReactNativePersistence` (que además no existe como export público en `firebase/auth` en esta versión):
+
 ```ts
 // src/shared/lib/firebase.ts
 import Constants from "expo-constants";
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
-import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
 const extra = Constants.expoConfig?.extra ?? {};
 
@@ -456,14 +457,7 @@ const firebaseConfig = {
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export let auth: ReturnType<typeof getAuth>;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-  });
-} catch {
-  auth = getAuth(app);
-}
+export const auth = getAuth(app);
 
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache(),
@@ -483,8 +477,6 @@ jest.mock("firebase/app", () => ({
 }));
 jest.mock("firebase/auth", () => ({
   getAuth: jest.fn(() => ({ mocked: "auth" })),
-  initializeAuth: jest.fn(() => ({ mocked: "auth" })),
-  getReactNativePersistence: jest.fn(),
 }));
 jest.mock("firebase/firestore", () => ({
   initializeFirestore: jest.fn(() => ({ mocked: "firestore" })),
