@@ -372,7 +372,9 @@ git commit -m "feat: scaffold feature folders and placeholder tab screens"
 **Interfaces:**
 - Produces: `import { app, auth, db, storage } from "src/shared/lib/firebase"` — usado por toda tarea futura que hable con Firebase.
 
-- [ ] **Step 1: Crear el proyecto Firebase (nuevo, separado del de fsapp)**
+- [ ] **Step 1 (usuario, no el implementador): crear el proyecto Firebase (nuevo, separado del de fsapp)**
+
+Este paso requiere una cuenta de Google real y acceso a la consola web — ningún agente automatizado puede hacerlo. Lo hace el usuario, en paralelo a que el resto de esta tarea avanza como código:
 
 ```bash
 npx firebase-tools login
@@ -383,7 +385,9 @@ Desde la consola de Firebase (console.firebase.google.com), sobre el proyecto re
 - Habilitar **Authentication** con los proveedores Email/Password, Google, y Apple.
 - Habilitar **Firestore** (modo producción, cualquier región).
 - Habilitar **Storage**.
-- Registrar una app iOS y una app Android, descargar `GoogleService-Info.plist` y `google-services.json`, y copiar los valores de configuración web (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) para el siguiente paso.
+- Registrar una app iOS y una app Android, descargar `GoogleService-Info.plist` y `google-services.json`, y copiar los valores de configuración web (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) para llenar el `.env` local (Step 3).
+
+El implementador de esta tarea NO ejecuta este paso — solo construye Steps 2-8 (SDK, `app.config.ts`, `firebase.ts`, test con mocks), que no requieren un proyecto real todavía porque `.env` no se commitea y el test mockea el SDK completo.
 
 - [ ] **Step 2: Instalar el SDK de Firebase y AsyncStorage**
 
