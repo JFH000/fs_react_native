@@ -19,9 +19,12 @@ export function signInWithEmail(email: string, password: string): Promise<UserCr
   return signInWithEmailAndPassword(auth, email, password);
 }
 
-export async function signInWithGoogle(): Promise<UserCredential> {
+export async function signInWithGoogle(): Promise<UserCredential | null> {
   await GoogleSignin.hasPlayServices();
   const response = await GoogleSignin.signIn();
+  if (response.type === "cancelled") {
+    return null;
+  }
   const idToken = response.data?.idToken;
   if (!idToken) {
     throw new Error("Google Sign-In no devolvió un idToken");
@@ -30,13 +33,21 @@ export async function signInWithGoogle(): Promise<UserCredential> {
   return signInWithCredential(auth, credential);
 }
 
-export async function signInWithApple(): Promise<UserCredential> {
-  const appleCredential = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
-  });
+export async function signInWithApple(): Promise<UserCredential | null> {
+  let appleCredential;
+  try {
+    appleCredential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ERR_REQUEST_CANCELED") {
+      return null;
+    }
+    throw err;
+  }
   if (!appleCredential.identityToken) {
     throw new Error("Apple Sign-In no devolvió un identityToken");
   }

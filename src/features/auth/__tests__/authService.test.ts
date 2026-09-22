@@ -61,9 +61,30 @@ test("signInWithGoogle exchanges the Google idToken for a Firebase credential", 
   );
 });
 
-test("signInWithGoogle throws if Google does not return an idToken", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
+test("signInWithGoogle throws if a completed sign-in does not return an idToken", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({
+    type: "success",
+    data: { idToken: null },
+  });
   await expect(signInWithGoogle()).rejects.toThrow("idToken");
+});
+
+test("signInWithGoogle resolves to null when the user cancels the account picker", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
+  (signInWithCredential as jest.Mock).mockClear();
+  await expect(signInWithGoogle()).resolves.toBeNull();
+  expect(signInWithCredential).not.toHaveBeenCalled();
+});
+
+test("signInWithApple resolves to null when the user cancels the native dialog", async () => {
+  (AppleAuthentication.signInAsync as jest.Mock).mockRejectedValue(
+    Object.assign(new Error("The user canceled the authorization attempt."), {
+      code: "ERR_REQUEST_CANCELED",
+    })
+  );
+  (signInWithCredential as jest.Mock).mockClear();
+  await expect(signInWithApple()).resolves.toBeNull();
+  expect(signInWithCredential).not.toHaveBeenCalled();
 });
 
 test("signInWithApple exchanges the Apple identityToken for a Firebase credential", async () => {

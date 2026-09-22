@@ -12,7 +12,7 @@ let testEnv: RulesTestEnvironment;
 
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
-    projectId: "fs-movil-test",
+    projectId: "fs-movil-test-profile",
     firestore: { rules: fs.readFileSync("firestore.rules", "utf8") },
   });
 });
