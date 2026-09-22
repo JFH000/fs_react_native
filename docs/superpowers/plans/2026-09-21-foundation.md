@@ -319,18 +319,22 @@ export default function SignInScreen() {
 
 `Tabs`/`Tabs.Screen` de `expo-router` esperan estar montados dentro del árbol de navegación real del router (no se pueden renderizar de forma aislada con `render()` de forma confiable). Por eso la prueba mockea `expo-router` con componentes livianos que solo registran sus props, en vez de renderizar el navegador real:
 
+Nota: `jest.mock()` se hoistea por encima de los imports, así que su factory no puede referenciar el `Text` importado arriba — hay que `require`-arlo adentro de la propia factory:
+
 ```tsx
 // src/app/__tests__/tabs-layout.test.tsx
 import type { ReactNode } from "react";
-import { Text } from "react-native";
 import { render, screen } from "@testing-library/react-native";
 
-jest.mock("expo-router", () => ({
-  Tabs: Object.assign(
-    ({ children }: { children: ReactNode }) => <>{children}</>,
-    { Screen: ({ options }: { options: { title: string } }) => <Text>{options.title}</Text> }
-  ),
-}));
+jest.mock("expo-router", () => {
+  const { Text } = require("react-native");
+  return {
+    Tabs: Object.assign(
+      ({ children }: { children: ReactNode }) => <>{children}</>,
+      { Screen: ({ options }: { options: { title: string } }) => <Text>{options.title}</Text> }
+    ),
+  };
+});
 
 import TabsLayout from "../(tabs)/_layout";
 
@@ -961,12 +965,12 @@ onAuthStateChanged(auth, (user) => {
 
 ```ts
 // src/features/auth/__tests__/useAuthStore.test.ts
-let authStateCallback: (user: unknown) => void;
+let mockAuthStateCallback: (user: unknown) => void;
 
 jest.mock("../../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({
   onAuthStateChanged: jest.fn((_auth, callback) => {
-    authStateCallback = callback;
+    mockAuthStateCallback = callback;
   }),
 }));
 
@@ -979,7 +983,7 @@ test("starts in a loading state with no user", () => {
 
 test("updates the store when Firebase reports an auth state change", () => {
   const fakeUser = { uid: "uid-1" };
-  authStateCallback(fakeUser);
+  mockAuthStateCallback(fakeUser);
   expect(useAuthStore.getState().isLoading).toBe(false);
   expect(useAuthStore.getState().user).toBe(fakeUser);
 });
@@ -1036,9 +1040,9 @@ import { render } from "@testing-library/react-native";
 jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
-const redirectMock = jest.fn(() => null);
+const mockRedirect = jest.fn(() => null);
 jest.mock("expo-router", () => ({
-  Redirect: (props: { href: string }) => redirectMock(props.href),
+  Redirect: (props: { href: string }) => mockRedirect(props.href),
   Stack: () => null,
   Tabs: Object.assign(() => null, { Screen: () => null }),
 }));
@@ -1048,19 +1052,19 @@ import TabsLayout from "../(tabs)/_layout";
 import AuthLayout from "../(auth)/_layout";
 
 beforeEach(() => {
-  redirectMock.mockClear();
+  mockRedirect.mockClear();
 });
 
 test("tabs layout redirects to sign-in when there is no user", async () => {
   useAuthStore.setState({ user: null, isLoading: false });
   await render(<TabsLayout />);
-  expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
+  expect(mockRedirect).toHaveBeenCalledWith("/(auth)/sign-in");
 });
 
 test("auth layout redirects to the service tab when a user is present", async () => {
   useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
   await render(<AuthLayout />);
-  expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
+  expect(mockRedirect).toHaveBeenCalledWith("/(tabs)/service");
 });
 ```
 
@@ -1098,28 +1102,28 @@ import { render } from "@testing-library/react-native";
 jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
-const redirectMock = jest.fn(() => null);
+const mockRedirect = jest.fn(() => null);
 jest.mock("expo-router", () => ({
-  Redirect: (props: { href: string }) => redirectMock(props.href),
+  Redirect: (props: { href: string }) => mockRedirect(props.href),
 }));
 
 import { useAuthStore } from "../../features/auth/useAuthStore";
 import IndexScreen from "../index";
 
 beforeEach(() => {
-  redirectMock.mockClear();
+  mockRedirect.mockClear();
 });
 
 test("redirects to sign-in when there is no user", async () => {
   useAuthStore.setState({ user: null, isLoading: false });
   await render(<IndexScreen />);
-  expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
+  expect(mockRedirect).toHaveBeenCalledWith("/(auth)/sign-in");
 });
 
 test("redirects to the service tab when a user is present", async () => {
   useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
   await render(<IndexScreen />);
-  expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
+  expect(mockRedirect).toHaveBeenCalledWith("/(tabs)/service");
 });
 ```
 
@@ -1428,9 +1432,9 @@ import { create } from "zustand";
 
 jest.mock("expo-router", () => ({ Stack: () => null }));
 
-const ensureUserProfileMock = jest.fn(() => Promise.resolve());
+const mockEnsureUserProfile = jest.fn(() => Promise.resolve());
 jest.mock("../../features/profile/profileRepository", () => ({
-  ensureUserProfile: (...args: unknown[]) => ensureUserProfileMock(...args),
+  ensureUserProfile: (...args: unknown[]) => mockEnsureUserProfile(...args),
 }));
 
 const fakeAuthStore = create<{ user: unknown; isLoading: boolean }>(() => ({
@@ -1442,13 +1446,13 @@ jest.mock("../../features/auth/useAuthStore", () => ({ useAuthStore: fakeAuthSto
 import RootLayout from "../_layout";
 
 beforeEach(() => {
-  ensureUserProfileMock.mockClear();
+  mockEnsureUserProfile.mockClear();
   fakeAuthStore.setState({ user: null, isLoading: false });
 });
 
 test("does not create a profile while there is no user", async () => {
   await render(<RootLayout />);
-  expect(ensureUserProfileMock).not.toHaveBeenCalled();
+  expect(mockEnsureUserProfile).not.toHaveBeenCalled();
 });
 
 test("ensures a profile once a user is present", async () => {
@@ -1458,14 +1462,14 @@ test("ensures a profile once a user is present", async () => {
     isLoading: false,
   });
   await view.rerender(<RootLayout />);
-  expect(ensureUserProfileMock).toHaveBeenCalledWith("uid-1", "tech@fsapp.com", "google");
+  expect(mockEnsureUserProfile).toHaveBeenCalledWith("uid-1", "tech@fsapp.com", "google");
 });
 ```
 
 - [ ] **Step 5: Correr la prueba y verificar que falla** (todavía no existe el efecto en `src/app/_layout.tsx`)
 
 Run: `npm test -- root-layout.test.tsx`
-Expected: FAIL (no calls to `ensureUserProfileMock`, o error de import)
+Expected: FAIL (no calls to `mockEnsureUserProfile`, o error de import)
 
 - [ ] **Step 6: Agregar el efecto a `src/app/_layout.tsx`, preservando el contenido existente del scaffold**
 
