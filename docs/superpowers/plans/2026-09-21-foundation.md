@@ -621,7 +621,7 @@ let testEnv: RulesTestEnvironment;
 
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
-    projectId: "fs-movil-test",
+    projectId: "fs-movil-test-rules",
     firestore: { rules: fs.readFileSync("firestore.rules", "utf8") },
   });
 });
@@ -786,14 +786,16 @@ npx expo install @react-native-google-signin/google-signin expo-apple-authentica
 
 - [ ] **Step 2: Agregar los config plugins**
 
+Expo no fusiona automáticamente el `plugins` que retorna `app.config.ts` con el `plugins` de `app.json` — si se asigna como un array nuevo, reemplaza por completo al de `app.json` (que ya trae `expo-router` y la configuración de `expo-splash-screen` del scaffold de Task 1). Hay que extender el array existente, no reemplazarlo:
+
 ```ts
 // app.config.ts (agregar la clave "plugins" dentro del objeto que retorna la función, junto a "extra")
-plugins: ["@react-native-google-signin/google-signin", "expo-apple-authentication"],
+plugins: [...(config.plugins ?? []), "@react-native-google-signin/google-signin", "expo-apple-authentication"],
 ```
 
 - [ ] **Step 3: Escribir `authService.ts`**
 
-`GoogleSignin.signIn()` (en la versión instalada de `@react-native-google-signin/google-signin`) devuelve `{ type: "success" | "cancelled", data: User | null }`, no el `idToken` directo — el `idToken` vive en `response.data?.idToken`:
+`GoogleSignin.signIn()` (en la versión instalada de `@react-native-google-signin/google-signin`) devuelve `{ type: "success" | "cancelled", data: User | null }`, no el `idToken` directo — el `idToken` vive en `response.data?.idToken`. Además, cuando el usuario cancela el picker de Google (o cancela el diálogo de Apple), eso **no es un error** — no debe tratarse igual que un fallo real y mostrarse como banner de error en la UI. `signInWithGoogle`/`signInWithApple` devuelven `null` en ese caso (no lanzan), y solo lanzan cuando de verdad falta el token en un login que sí se completó:
 
 ```ts
 // src/features/auth/authService.ts
@@ -818,9 +820,12 @@ export function signInWithEmail(email: string, password: string): Promise<UserCr
   return signInWithEmailAndPassword(auth, email, password);
 }
 
-export async function signInWithGoogle(): Promise<UserCredential> {
+export async function signInWithGoogle(): Promise<UserCredential | null> {
   await GoogleSignin.hasPlayServices();
   const response = await GoogleSignin.signIn();
+  if (response.type === "cancelled") {
+    return null;
+  }
   const idToken = response.data?.idToken;
   if (!idToken) {
     throw new Error("Google Sign-In no devolvió un idToken");
@@ -829,13 +834,21 @@ export async function signInWithGoogle(): Promise<UserCredential> {
   return signInWithCredential(auth, credential);
 }
 
-export async function signInWithApple(): Promise<UserCredential> {
-  const appleCredential = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
-  });
+export async function signInWithApple(): Promise<UserCredential | null> {
+  let appleCredential: AppleAuthentication.AppleAuthenticationCredential;
+  try {
+    appleCredential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ERR_REQUEST_CANCELED") {
+      return null;
+    }
+    throw err;
+  }
   if (!appleCredential.identityToken) {
     throw new Error("Apple Sign-In no devolvió un identityToken");
   }
@@ -848,6 +861,8 @@ export function signOutUser(): Promise<void> {
   return signOut(auth);
 }
 ```
+
+**Verificar** el código exacto que `expo-apple-authentication` usa para señalar cancelación (`"ERR_REQUEST_CANCELED"` es el valor documentado más común, pero confirmarlo contra `node_modules/expo-apple-authentication` de la versión instalada — mismo criterio que ya se usó en esta tarea para verificar la forma real de la respuesta de `GoogleSignin.signIn()` en vez de asumirla) y ajustar el `if` si el valor real difiere.
 
 - [ ] **Step 4: Escribir las pruebas (mockeando los SDKs nativos)**
 
@@ -916,9 +931,15 @@ test("signInWithGoogle exchanges the Google idToken for a Firebase credential", 
   );
 });
 
-test("signInWithGoogle throws if Google does not return an idToken", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
+test("signInWithGoogle throws if a completed sign-in does not return an idToken", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "success", data: { idToken: null } });
   await expect(signInWithGoogle()).rejects.toThrow("idToken");
+});
+
+test("signInWithGoogle returns null when the user cancels, without throwing", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
+  await expect(signInWithGoogle()).resolves.toBeNull();
+  expect(signInWithCredential).not.toHaveBeenCalled();
 });
 
 test("signInWithApple exchanges the Apple identityToken for a Firebase credential", async () => {
@@ -931,12 +952,19 @@ test("signInWithApple exchanges the Apple identityToken for a Firebase credentia
     { providerId: "apple.com" }
   );
 });
+
+test("signInWithApple returns null when the user cancels, without throwing", async () => {
+  const cancelError = Object.assign(new Error("canceled"), { code: "ERR_REQUEST_CANCELED" });
+  (AppleAuthentication.signInAsync as jest.Mock).mockRejectedValue(cancelError);
+  await expect(signInWithApple()).resolves.toBeNull();
+  expect(signInWithCredential).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 5: Correr los tests**
 
 Run: `npm test -- authService.test.ts`
-Expected: PASS (5 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 6 (usuario, no el implementador): generar un development build para poder probar los flujos nativos manualmente**
 
@@ -1418,7 +1446,7 @@ let testEnv: RulesTestEnvironment;
 
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
-    projectId: "fs-movil-test",
+    projectId: "fs-movil-test-profile",
     firestore: { rules: fs.readFileSync("firestore.rules", "utf8") },
   });
 });
