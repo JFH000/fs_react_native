@@ -289,9 +289,21 @@ export default function SignInScreen() {
 
 - [ ] **Step 5: Escribir una prueba que verifique que las 6 tabs están declaradas**
 
+`Tabs`/`Tabs.Screen` de `expo-router` esperan estar montados dentro del árbol de navegación real del router (no se pueden renderizar de forma aislada con `render()` de forma confiable). Por eso la prueba mockea `expo-router` con componentes livianos que solo registran sus props, en vez de renderizar el navegador real:
+
 ```tsx
 // app/__tests__/tabs-layout.test.tsx
+import type { ReactNode } from "react";
+import { Text } from "react-native";
 import { render, screen } from "@testing-library/react-native";
+
+jest.mock("expo-router", () => ({
+  Tabs: Object.assign(
+    ({ children }: { children: ReactNode }) => <>{children}</>,
+    { Screen: ({ options }: { options: { title: string } }) => <Text>{options.title}</Text> }
+  ),
+}));
+
 import TabsLayout from "../(tabs)/_layout";
 
 test("declares all six business module tabs", () => {
@@ -301,6 +313,8 @@ test("declares all six business module tabs", () => {
   }
 });
 ```
+
+**Nota para Task 8**: cuando esa tarea agregue una guarda de autenticación a `app/(tabs)/_layout.tsx`, debe actualizar este mismo archivo de prueba (ver el paso correspondiente en Task 8) para que el mock de `useAuthStore` refleje un usuario autenticado — si no, esta prueba pasa a fallar porque el componente devolvería `null` antes de llegar a los tabs.
 
 - [ ] **Step 6: Correr los tests**
 
@@ -876,8 +890,8 @@ git commit -m "feat: add auth service for email/password, Google and Apple sign-
 ### Task 8: Store de autenticación y guardas de navegación
 
 **Files:**
-- Create: `src/features/auth/useAuthStore.ts`
-- Modify: `app/(auth)/_layout.tsx` (crear), `app/(tabs)/_layout.tsx`
+- Create: `src/features/auth/useAuthStore.ts`, `app/(auth)/_layout.tsx`
+- Modify: `app/(tabs)/_layout.tsx`
 - Test: `src/features/auth/__tests__/useAuthStore.test.ts`, `app/__tests__/auth-guards.test.tsx`
 
 **Interfaces:**
@@ -983,9 +997,14 @@ export default function TabsLayout() {
 
 - [ ] **Step 6: Escribir la prueba de las guardas**
 
+Esta prueba importa `useAuthStore` real (para controlar su estado con `setState`), así que también hay que mockear `firebase/auth` y `shared/lib/firebase` — si no, el registro de `onAuthStateChanged` en el import de `useAuthStore.ts` se ejecuta contra el SDK real de Firebase dentro de Jest y puede fallar de forma impredecible:
+
 ```tsx
 // app/__tests__/auth-guards.test.tsx
 import { render } from "@testing-library/react-native";
+
+jest.mock("../../src/shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
 const redirectMock = jest.fn(() => null);
 jest.mock("expo-router", () => ({
@@ -1015,12 +1034,25 @@ test("auth layout redirects to the service tab when a user is present", () => {
 });
 ```
 
-- [ ] **Step 7: Correr los tests**
+- [ ] **Step 7: Actualizar el test de Task 3 (`app/__tests__/tabs-layout.test.tsx`) para que siga pasando con la guarda ya agregada**
 
-Run: `npm test -- useAuthStore.test.ts auth-guards.test.tsx`
-Expected: PASS (4 tests)
+Ese test importa `TabsLayout` directamente; ahora que el componente llama a `useAuthStore()`, hay que mockear el store con un usuario autenticado para que no se quede en el `return null`/`Redirect` antes de llegar a los tabs:
 
-- [ ] **Step 8: Commit**
+```tsx
+// app/__tests__/tabs-layout.test.tsx (agregar antes del import de TabsLayout, junto al mock existente de expo-router)
+jest.mock("../../src/shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
+jest.mock("../../src/features/auth/useAuthStore", () => ({
+  useAuthStore: () => ({ user: { uid: "uid-1" }, isLoading: false }),
+}));
+```
+
+- [ ] **Step 8: Correr los tests**
+
+Run: `npm test -- useAuthStore.test.ts auth-guards.test.tsx tabs-layout.test.tsx`
+Expected: PASS (5 tests)
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add -A
@@ -1215,12 +1247,14 @@ git commit -m "feat: add sign-in and sign-up screens"
 
 **Files:**
 - Create: `src/features/profile/profileRepository.ts`
-- Modify: `app/(tabs)/profile.tsx`
-- Test: `src/features/profile/__tests__/profileRepository.test.ts`
+- Modify: `app/(tabs)/profile.tsx`, `app/_layout.tsx`
+- Test: `src/features/profile/__tests__/profileRepository.test.ts`, `app/__tests__/root-layout.test.tsx`
 
 **Interfaces:**
-- Consumes: `db` de `src/shared/lib/firebase.ts`, `createEmptyUserProfile` de `src/shared/types/user.ts`, `signOutUser` de `src/features/auth/authService.ts`
+- Consumes: `db` de `src/shared/lib/firebase.ts`, `createEmptyUserProfile`/`AuthProvider` de `src/shared/types/user.ts`, `signOutUser` de `src/features/auth/authService.ts`, `useAuthStore` de `src/features/auth/useAuthStore.ts` (Task 8 — sin modificarlo)
 - Produces: `ensureUserProfile(uid, email, authProvider): Promise<UserProfile>` — consumido por el futuro plan de Perfil de usuario.
+
+**Nota de diseño**: la creación del perfil se dispara desde un efecto en `app/_layout.tsx` (que ninguna tarea anterior prueba), no modificando `src/features/auth/useAuthStore.ts` — así el store y sus pruebas de Task 8 quedan intactos.
 
 - [ ] **Step 1: Escribir `profileRepository.ts`**
 
@@ -1309,24 +1343,87 @@ test("does not overwrite an existing profile document", async () => {
 Run: `npx firebase-tools emulators:exec --only firestore "npx jest profileRepository.test.ts"`
 Expected: 2 tests, PASS
 
-- [ ] **Step 4: Llamar a `ensureUserProfile` cuando cambia el estado de auth**
+- [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `app/_layout.tsx`**
 
-```ts
-// src/features/auth/useAuthStore.ts (agregar dentro del callback de onAuthStateChanged, después de useAuthStore.setState)
-import { ensureUserProfile } from "../profile/profileRepository";
+```tsx
+// app/__tests__/root-layout.test.tsx
+import { render } from "@testing-library/react-native";
+import { create } from "zustand";
 
-// dentro de onAuthStateChanged(auth, (user) => { ... }):
-if (user) {
-  const provider = user.providerData[0]?.providerId.includes("google")
-    ? "google"
-    : user.providerData[0]?.providerId.includes("apple")
-      ? "apple"
-      : "password";
-  void ensureUserProfile(user.uid, user.email ?? "", provider);
-}
+jest.mock("expo-router", () => ({ Stack: () => null }));
+
+const ensureUserProfileMock = jest.fn(() => Promise.resolve());
+jest.mock("../../src/features/profile/profileRepository", () => ({
+  ensureUserProfile: (...args: unknown[]) => ensureUserProfileMock(...args),
+}));
+
+const fakeAuthStore = create<{ user: unknown; isLoading: boolean }>(() => ({
+  user: null,
+  isLoading: false,
+}));
+jest.mock("../../src/features/auth/useAuthStore", () => ({ useAuthStore: fakeAuthStore }));
+
+import RootLayout from "../_layout";
+
+beforeEach(() => {
+  ensureUserProfileMock.mockClear();
+  fakeAuthStore.setState({ user: null, isLoading: false });
+});
+
+test("does not create a profile while there is no user", () => {
+  render(<RootLayout />);
+  expect(ensureUserProfileMock).not.toHaveBeenCalled();
+});
+
+test("ensures a profile once a user is present", () => {
+  const view = render(<RootLayout />);
+  fakeAuthStore.setState({
+    user: { uid: "uid-1", email: "tech@fsapp.com", providerData: [{ providerId: "google.com" }] },
+    isLoading: false,
+  });
+  view.rerender(<RootLayout />);
+  expect(ensureUserProfileMock).toHaveBeenCalledWith("uid-1", "tech@fsapp.com", "google");
+});
 ```
 
-- [ ] **Step 5: Implementar la pantalla de perfil mínima**
+- [ ] **Step 5: Correr la prueba y verificar que falla** (todavía no existe el efecto en `app/_layout.tsx`)
+
+Run: `npm test -- root-layout.test.tsx`
+Expected: FAIL (no calls to `ensureUserProfileMock`, o error de import)
+
+- [ ] **Step 6: Agregar el efecto a `app/_layout.tsx`, preservando el contenido existente del scaffold**
+
+No reemplazar el archivo completo — el scaffold de Task 1 y el `import "../global.css"` de Task 2 deben seguir ahí. Agregar solo el import y el hook dentro del componente `RootLayout` ya existente:
+
+```tsx
+// app/_layout.tsx (agregar imports y el useEffect dentro del componente RootLayout existente, antes del return)
+import { useEffect } from "react";
+import { useAuthStore } from "../src/features/auth/useAuthStore";
+import { ensureUserProfile } from "../src/features/profile/profileRepository";
+import type { AuthProvider } from "../src/shared/types/user";
+
+function resolveAuthProvider(providerId: string | undefined): AuthProvider {
+  if (providerId?.includes("google")) return "google";
+  if (providerId?.includes("apple")) return "apple";
+  return "password";
+}
+
+// dentro de RootLayout(), antes del return existente:
+const user = useAuthStore((state) => state.user);
+
+useEffect(() => {
+  if (!user) return;
+  const provider = resolveAuthProvider(user.providerData[0]?.providerId);
+  void ensureUserProfile(user.uid, user.email ?? "", provider);
+}, [user]);
+```
+
+- [ ] **Step 7: Correr la prueba y verificar que pasa**
+
+Run: `npm test -- root-layout.test.tsx`
+Expected: PASS (2 tests)
+
+- [ ] **Step 8: Implementar la pantalla de perfil mínima**
 
 ```tsx
 // app/(tabs)/profile.tsx
@@ -1353,7 +1450,7 @@ export default function ProfileScreen() {
 }
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add -A
