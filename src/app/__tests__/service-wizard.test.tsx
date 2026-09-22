@@ -1,15 +1,43 @@
 import { render, screen, fireEvent } from "@testing-library/react-native";
+import { createEmptyCustomerData, createEmptyEquipmentData, createEmptyTechnicalParameters } from "../../shared/types/service";
 
 const mockBack = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack }) }));
 
 const mockNextStep = jest.fn();
 const mockPrevStep = jest.fn();
+
+function createMockDraft() {
+  return {
+    consecutivo: "FS-2026-0001",
+    date: "2026-09-22",
+    startTime: "08:00",
+    endTime: "09:00",
+    gps: null,
+    customer: createEmptyCustomerData(),
+    equipment: createEmptyEquipmentData(),
+    photos: [],
+    observations: "",
+    technicalParams: createEmptyTechnicalParameters(),
+    aiConcept: "",
+    includeAiConcept: false,
+    signatures: null,
+    nextSteps: "",
+  };
+}
+
 let mockState = { currentStep: 1, validationError: null as string | null };
+let mockDraft = createMockDraft();
 jest.mock("../../features/service/useServiceWizardStore", () => ({
   useServiceWizardStore: (
-    selector: (s: typeof mockState & { nextStep: typeof mockNextStep; prevStep: typeof mockPrevStep }) => unknown
-  ) => selector({ ...mockState, nextStep: mockNextStep, prevStep: mockPrevStep }),
+    selector: (
+      s: typeof mockState & {
+        draft: ReturnType<typeof createMockDraft>;
+        nextStep: typeof mockNextStep;
+        prevStep: typeof mockPrevStep;
+      }
+    ) => unknown
+  ) => selector({ ...mockState, draft: mockDraft, nextStep: mockNextStep, prevStep: mockPrevStep }),
   WIZARD_STEP_COUNT: 9,
 }));
 
@@ -20,6 +48,7 @@ beforeEach(() => {
   mockNextStep.mockClear();
   mockPrevStep.mockClear();
   mockState = { currentStep: 1, validationError: null };
+  mockDraft = createMockDraft();
 });
 
 test("renders the current step's title and a placeholder body for unbuilt steps", async () => {
