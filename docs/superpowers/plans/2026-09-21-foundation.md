@@ -195,11 +195,17 @@ test("renders its children inside the safe area", () => {
 });
 ```
 
-- [ ] **Step 7: Importar `global.css` en el layout raíz**
+- [ ] **Step 7: Importar `global.css` en el layout raíz y envolverlo en `SafeAreaProvider`**
+
+`SafeAreaView` de `react-native-safe-area-context` necesita un `SafeAreaProvider` ancestro para calcular los insets correctamente en dispositivos con notch/isla dinámica — sin él, `Screen` funcionaría mal en el dispositivo real aunque su prueba unitaria pase. No reemplazar el resto del archivo que generó el scaffold de Task 1 (theme provider, splash screen, etc.) — solo agregar el import y envolver el contenido que ya retorna el componente `RootLayout`:
 
 ```tsx
-// app/_layout.tsx (al inicio del archivo)
+// app/_layout.tsx (agregar el import al inicio del archivo)
 import "../global.css";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+// envolver lo que ya retorna RootLayout() dentro de <SafeAreaProvider>, por ejemplo:
+// return <SafeAreaProvider>{contenidoExistenteDelScaffold}</SafeAreaProvider>;
 ```
 
 - [ ] **Step 8: Correr los tests**
