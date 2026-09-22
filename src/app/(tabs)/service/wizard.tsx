@@ -5,6 +5,7 @@ import { useServiceWizardStore, WIZARD_STEP_COUNT } from "../../../features/serv
 import { StepPlaceholder } from "../../../features/service/steps/StepPlaceholder";
 import { Step1VisitData } from "../../../features/service/steps/Step1VisitData";
 import { Step2CustomerData } from "../../../features/service/steps/Step2CustomerData";
+import { Step3EquipmentData } from "../../../features/service/steps/Step3EquipmentData";
 
 const STEP_TITLES = [
   "Datos de Visita",
@@ -21,6 +22,7 @@ const STEP_TITLES = [
 function StepBody({ step }: { step: number }) {
   if (step === 1) return <Step1VisitData />;
   if (step === 2) return <Step2CustomerData />;
+  if (step === 3) return <Step3EquipmentData />;
   return <StepPlaceholder title={STEP_TITLES[step - 1]} />;
 }
 
