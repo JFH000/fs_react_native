@@ -1,24 +1,3 @@
-jest.mock("expo-constants", () => ({
-  default: {
-    expoConfig: {
-      extra: {
-        firebaseApiKey: "test-api-key",
-        firebaseAuthDomain: "test-auth-domain",
-        firebaseProjectId: "test-project-id",
-        firebaseStorageBucket: "test-storage-bucket",
-        firebaseMessagingSenderId: "test-sender-id",
-        firebaseAppId: "test-app-id",
-      },
-    },
-  },
-}));
-jest.mock("@react-native-async-storage/async-storage", () => ({
-  default: {
-    getItem: jest.fn(),
-    setItem: jest.fn(),
-    removeItem: jest.fn(),
-  },
-}));
 jest.mock("firebase/app", () => ({
   getApps: jest.fn(() => []),
   getApp: jest.fn(),
@@ -26,8 +5,6 @@ jest.mock("firebase/app", () => ({
 }));
 jest.mock("firebase/auth", () => ({
   getAuth: jest.fn(() => ({ mocked: "auth" })),
-  initializeAuth: jest.fn(() => ({ mocked: "auth" })),
-  getReactNativePersistence: jest.fn(),
 }));
 jest.mock("firebase/firestore", () => ({
   initializeFirestore: jest.fn(() => ({ mocked: "firestore" })),

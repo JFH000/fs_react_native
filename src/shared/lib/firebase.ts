@@ -1,10 +1,8 @@
 import Constants from "expo-constants";
 import { getApp, getApps, initializeApp } from "firebase/app";
-// @ts-ignore - getReactNativePersistence is available at runtime for React Native
-import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
-import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
 const extra = Constants.expoConfig?.extra ?? {};
 
@@ -19,14 +17,7 @@ const firebaseConfig = {
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export let auth: ReturnType<typeof getAuth>;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-  });
-} catch {
-  auth = getAuth(app);
-}
+export const auth = getAuth(app);
 
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache(),
