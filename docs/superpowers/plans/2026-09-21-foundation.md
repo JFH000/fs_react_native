@@ -516,17 +516,47 @@ git commit -m "feat: initialize Firebase SDK against the new fs_movil project"
 
 **Files:**
 - Create: `firestore.rules`, `storage.rules`, `firebase.json`
+- Modify: `package.json` (separar la config de Jest en "projects")
 - Test: `tests/rules/firestore.rules.test.ts`
 
 **Interfaces:**
 - Consumes: ninguno de tareas anteriores.
-- Produces: reglas desplegables (`firebase deploy --only firestore:rules,storage:rules`) que toda tarea futura que agregue colecciones debe extender, nunca debilitar.
+- Produces: reglas desplegables (`firebase deploy --only firestore:rules,storage:rules`) que toda tarea futura que agregue colecciones debe extender, nunca debilitar. También produce la convención de que **todo test que hable con el emulador de Firebase vive bajo `tests/`**, nunca bajo `src/**/__tests__/` — las tareas futuras que agreguen ese tipo de test (ej. Task 10) deben seguir esa convención.
 
 - [ ] **Step 1: Instalar las dependencias del emulador**
 
 ```bash
 npm install --save-dev @firebase/rules-unit-testing
 ```
+
+- [ ] **Step 1b: Separar la config de Jest en "projects" (RN vs. Node puro)**
+
+`@firebase/rules-unit-testing` no carga bajo el preset `jest-expo`: ese preset fuerza `customExportConditions: ["require", "react-native"]`, lo que hace que la resolución de paquetes de `firebase`/`@firebase` caiga en sus builds ESM (pensados para bundlers, no para el `require` de Jest) y explote con `SyntaxError: Cannot use import statement outside a module`. La solución es correr los tests que hablan con el emulador en un proyecto de Jest aparte, en entorno Node plano (sin esas condiciones custom), separado por carpeta: todo lo que vive bajo `src/**/__tests__/` usa `jest-expo` (componentes/hooks RN), todo lo que vive bajo `tests/` usa Node puro:
+
+```json
+// package.json (reemplazar la clave "jest" existente)
+"jest": {
+  "projects": [
+    {
+      "displayName": "app",
+      "preset": "jest-expo",
+      "transformIgnorePatterns": [
+        "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
+      ],
+      "testPathIgnorePatterns": ["/node_modules/", "<rootDir>/tests/"]
+    },
+    {
+      "displayName": "node",
+      "testEnvironment": "node",
+      "testMatch": ["<rootDir>/tests/**/*.test.ts"]
+    }
+  ]
+}
+```
+
+Verificar empíricamente que el cambio funciona corriendo `npx jest tests/rules` (sin el emulador corriendo todavía): el error esperado ahora es de **conexión** al emulador (ej. `ECONNREFUSED` o "could not reach Cloud Firestore emulator"), no el `SyntaxError` de antes — eso confirma que el problema de carga de módulos quedó resuelto, aunque la prueba completa siga sin poder pasar hasta que el emulador esté disponible (Java 21+). Si el error sigue siendo de sintaxis/imports, ajustar la config hasta que cambie a un error de conexión, y documentar qué se ajustó y por qué.
+
+Correr también `npm test` completo (sin el emulador) para confirmar que el proyecto "app" sigue corriendo todos los tests existentes sin regresión — los del proyecto "node" van a fallar por la conexión al emulador, eso es esperado y no bloquea esta tarea.
 
 - [ ] **Step 2: Escribir `firestore.rules`**
 
@@ -1326,7 +1356,7 @@ git commit -m "feat: add sign-in and sign-up screens"
 **Files:**
 - Create: `src/features/profile/profileRepository.ts`
 - Modify: `src/app/(tabs)/profile.tsx`, `src/app/_layout.tsx`
-- Test: `src/features/profile/__tests__/profileRepository.test.ts`, `src/app/__tests__/root-layout.test.tsx`
+- Test: `tests/profile/profileRepository.test.ts` (bajo `tests/`, no `src/**/__tests__/` — corre contra el emulador, ver la convención que estableció Task 5), `src/app/__tests__/root-layout.test.tsx`
 
 **Interfaces:**
 - Consumes: `db` de `src/shared/lib/firebase.ts`, `createEmptyUserProfile`/`AuthProvider` de `src/shared/types/user.ts`, `signOutUser` de `src/features/auth/authService.ts`, `useAuthStore` de `src/features/auth/useAuthStore.ts` (Task 8 — sin modificarlo)
@@ -1362,17 +1392,19 @@ export async function ensureUserProfile(
 
 - [ ] **Step 2: Escribir la prueba (contra el emulador de Firestore, reutilizando el `firebase.json` de Task 5)**
 
+Vive bajo `tests/`, no `src/**/__tests__/`, porque corre en el proyecto Node puro de Jest que estableció Task 5 (el proyecto `jest-expo` no puede cargar `@firebase/rules-unit-testing`):
+
 ```ts
-// src/features/profile/__tests__/profileRepository.test.ts
+// tests/profile/profileRepository.test.ts
 import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import { doc, setDoc } from "firebase/firestore";
 import fs from "fs";
-import { ensureUserProfile } from "../profileRepository";
+import { ensureUserProfile } from "../../src/features/profile/profileRepository";
 
-jest.mock("../../../shared/lib/firebase", () => ({ db: undefined }));
+jest.mock("../../src/shared/lib/firebase", () => ({ db: undefined }));
 
 let testEnv: RulesTestEnvironment;
 
@@ -1393,7 +1425,7 @@ afterEach(async () => {
 
 test("creates a profile document on first login", async () => {
   const aliceDb = testEnv.authenticatedContext("alice").firestore();
-  jest.requireMock("../../../shared/lib/firebase").db = aliceDb;
+  jest.requireMock("../../src/shared/lib/firebase").db = aliceDb;
 
   const profile = await ensureUserProfile("alice", "alice@example.com", "password");
 
@@ -1403,7 +1435,7 @@ test("creates a profile document on first login", async () => {
 
 test("does not overwrite an existing profile document", async () => {
   const aliceDb = testEnv.authenticatedContext("alice").firestore();
-  jest.requireMock("../../../shared/lib/firebase").db = aliceDb;
+  jest.requireMock("../../src/shared/lib/firebase").db = aliceDb;
   await setDoc(doc(aliceDb, "users/alice"), {
     uid: "alice",
     email: "alice@example.com",
@@ -1418,7 +1450,7 @@ test("does not overwrite an existing profile document", async () => {
 
 - [ ] **Step 3: Correr las pruebas contra el emulador**
 
-Run: `npx firebase-tools emulators:exec --only firestore "npx jest profileRepository.test.ts"`
+Run: `npx firebase-tools emulators:exec --only firestore "npx jest tests/profile"`
 Expected: 2 tests, PASS
 
 - [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `src/app/_layout.tsx`**
