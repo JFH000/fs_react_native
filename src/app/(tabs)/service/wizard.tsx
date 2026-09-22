@@ -7,6 +7,7 @@ import { Step1VisitData } from "../../../features/service/steps/Step1VisitData";
 import { Step2CustomerData } from "../../../features/service/steps/Step2CustomerData";
 import { Step3EquipmentData } from "../../../features/service/steps/Step3EquipmentData";
 import { Step4Photos } from "../../../features/service/steps/Step4Photos";
+import { Step5Observations } from "../../../features/service/steps/Step5Observations";
 
 const STEP_TITLES = [
   "Datos de Visita",
@@ -25,6 +26,7 @@ function StepBody({ step }: { step: number }) {
   if (step === 2) return <Step2CustomerData />;
   if (step === 3) return <Step3EquipmentData />;
   if (step === 4) return <Step4Photos />;
+  if (step === 5) return <Step5Observations />;
   return <StepPlaceholder title={STEP_TITLES[step - 1]} />;
 }
 
