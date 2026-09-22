@@ -628,10 +628,12 @@ test("an unauthenticated request is denied", async () => {
 Run: `npx firebase-tools emulators:exec --only firestore "npx jest tests/rules"`
 Expected: 3 tests, PASS (requiere Java instalado para el emulador)
 
-- [ ] **Step 7: Desplegar las reglas al proyecto real**
+- [ ] **Step 7 (usuario, no el implementador): desplegar las reglas al proyecto real**
+
+Requiere el project ID real que el usuario eligió al crear el proyecto en Task 4 (puede no ser exactamente `fs-movil-app` si ese nombre ya estaba tomado — los project ID de Firebase son únicos globalmente) y una sesión de `firebase-tools login` ya autenticada, ninguna de las dos cosas disponibles para el implementador. Se hace después, cuando el usuario confirme el project ID real:
 
 ```bash
-npx firebase-tools deploy --only firestore:rules,storage:rules --project fs-movil-app
+npx firebase-tools deploy --only firestore:rules,storage:rules --project <PROJECT_ID_REAL>
 ```
 
 - [ ] **Step 8: Commit**
