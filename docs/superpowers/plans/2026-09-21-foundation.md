@@ -1,0 +1,1397 @@
+# Fundación (Foundation) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Levantar el proyecto Expo de fs_movil con navegación, estilos, y autenticación real (email/password, Google, Apple) contra un proyecto Firebase nuevo y separado, con el modelo de datos y las reglas de seguridad del perfil de usuario ya funcionando de punta a punta.
+
+**Architecture:** Proyecto Expo (managed workflow) con Expo Router para navegación basada en archivos, NativeWind para estilos, Zustand para estado de auth, y Firebase (Auth + Firestore + Storage) con persistencia offline del SDK. Estructura por features (`src/features/*`) y utilidades compartidas (`src/shared/*`), separada de las rutas de Expo Router (`app/*`).
+
+**Tech Stack:** Expo SDK (managed), TypeScript, Expo Router, NativeWind + Tailwind CSS, Zustand, Firebase JS SDK (`firebase` v10+), `@react-native-google-signin/google-signin`, `expo-apple-authentication`, Jest (`jest-expo` preset) + `@testing-library/react-native`, `@firebase/rules-unit-testing` + Firebase Emulator Suite para las reglas.
+
+**Spec:** `docs/superpowers/specs/2026-09-21-fs-app-mobile-port-design.md`
+
+## Global Constraints
+
+- Expo managed workflow — sin eject a bare React Native.
+- NativeWind para todo el styling (no StyleSheet plano salvo casos que NativeWind no cubra).
+- Expo Router para toda la navegación (rutas basadas en archivos bajo `app/`).
+- Zustand para estado de UI por feature; Firestore (`onSnapshot`) es la fuente de verdad para datos remotos, no estado local duplicado.
+- Firestore debe inicializarse con `persistentLocalCache` (offline habilitado desde el día uno).
+- El proyecto Firebase de fs_movil es **nuevo y separado** del proyecto Firebase de fsapp — no se reutilizan credenciales ni datos.
+- Métodos de autenticación permitidos: email/password (con verificación real de contraseña), Google Sign-In, Sign in with Apple. Ningún otro proveedor social.
+- El `docId` de cualquier documento propiedad de un usuario es siempre `request.auth.uid` de Firebase Auth, sin excepción.
+- Ninguna colección de Firestore/Storage se usa desde la app sin tener antes reglas de seguridad reales que exigan `request.auth.uid` (no `allow read, write: if true`).
+
+---
+
+### Task 1: Scaffold del proyecto Expo con TypeScript y testing
+
+**Files:**
+- Create: todo lo generado por `create-expo-app` (`app/`, `assets/`, `package.json`, `tsconfig.json`, `app.json`, etc.)
+- Modify: `package.json` (scripts de test y lint)
+- Test: `src/shared/__tests__/sanity.test.ts`
+
+**Interfaces:**
+- Produces: script `npm test` (Jest) y `npm run lint` (`tsc --noEmit`) disponibles para todas las tareas siguientes.
+
+- [ ] **Step 1: Generar el proyecto Expo en el directorio actual**
+
+```bash
+npx create-expo-app@latest . --template default
+```
+
+Si pregunta por confirmar que el directorio no está vacío (ya existen `README.md` y `.git`), confirmar que sí continúe.
+
+- [ ] **Step 2: Instalar dependencias de testing**
+
+```bash
+npx expo install jest-expo jest @testing-library/react-native @types/jest -- --dev
+```
+
+- [ ] **Step 3: Configurar Jest en `package.json`**
+
+```json
+{
+  "scripts": {
+    "test": "jest",
+    "lint": "tsc --noEmit"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
+    ]
+  }
+}
+```
+
+- [ ] **Step 4: Escribir una prueba de humo**
+
+```ts
+// src/shared/__tests__/sanity.test.ts
+describe('project setup', () => {
+  it('runs tests', () => {
+    expect(1 + 1).toBe(2);
+  });
+});
+```
+
+- [ ] **Step 5: Correr los tests y verificar que pasan**
+
+Run: `npm test`
+Expected: 1 suite, 1 test, PASS
+
+- [ ] **Step 6: Correr el type-check**
+
+Run: `npm run lint`
+Expected: sin errores
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "chore: scaffold Expo project with TypeScript and Jest"
+```
+
+---
+
+### Task 2: Configurar NativeWind
+
+**Files:**
+- Create: `tailwind.config.js`, `global.css`
+- Modify: `babel.config.js`, `metro.config.js`, `app/_layout.tsx`
+- Test: `src/shared/components/__tests__/Screen.test.tsx`
+
+**Interfaces:**
+- Produces: componente `src/shared/components/Screen.tsx` (`<Screen>` — wrapper con `className` de NativeWind), usable por cualquier pantalla futura.
+
+- [ ] **Step 1: Instalar NativeWind y Tailwind**
+
+```bash
+npx expo install nativewind tailwindcss react-native-reanimated react-native-safe-area-context
+```
+
+- [ ] **Step 2: Inicializar Tailwind**
+
+```bash
+npx tailwindcss init
+```
+
+```js
+// tailwind.config.js
+module.exports = {
+  content: ["./app/**/*.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
+  presets: [require("nativewind/preset")],
+  theme: { extend: {} },
+  plugins: [],
+};
+```
+
+- [ ] **Step 3: Crear `global.css`**
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+- [ ] **Step 4: Configurar Babel y Metro**
+
+```js
+// babel.config.js
+module.exports = function (api) {
+  api.cache(true);
+  return {
+    presets: [["babel-preset-expo", { jsxImportSource: "nativewind" }], "nativewind/babel"],
+  };
+};
+```
+
+```js
+// metro.config.js
+const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro");
+
+const config = getDefaultConfig(__dirname);
+
+module.exports = withNativeWind(config, { input: "./global.css" });
+```
+
+- [ ] **Step 5: Escribir el componente `Screen` con NativeWind**
+
+```tsx
+// src/shared/components/Screen.tsx
+import { SafeAreaView } from "react-native-safe-area-context";
+import type { PropsWithChildren } from "react";
+
+export function Screen({ children }: PropsWithChildren) {
+  return (
+    <SafeAreaView className="flex-1 bg-white dark:bg-neutral-900" testID="screen-root">
+      {children}
+    </SafeAreaView>
+  );
+}
+```
+
+- [ ] **Step 6: Escribir la prueba**
+
+```tsx
+// src/shared/components/__tests__/Screen.test.tsx
+import { render, screen } from "@testing-library/react-native";
+import { Text } from "react-native";
+import { Screen } from "../Screen";
+
+test("renders its children inside the safe area", () => {
+  render(
+    <Screen>
+      <Text>contenido</Text>
+    </Screen>
+  );
+  expect(screen.getByText("contenido")).toBeTruthy();
+  expect(screen.getByTestId("screen-root")).toBeTruthy();
+});
+```
+
+- [ ] **Step 7: Importar `global.css` en el layout raíz**
+
+```tsx
+// app/_layout.tsx (al inicio del archivo)
+import "../global.css";
+```
+
+- [ ] **Step 8: Correr los tests**
+
+Run: `npm test -- Screen.test.tsx`
+Expected: PASS
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add -A
+git commit -m "feat: configure NativeWind and add Screen wrapper component"
+```
+
+---
+
+### Task 3: Estructura de carpetas y shell de navegación (tabs vacíos)
+
+**Files:**
+- Create: `app/(auth)/sign-in.tsx`, `app/(tabs)/_layout.tsx`, `app/(tabs)/service.tsx`, `app/(tabs)/history.tsx`, `app/(tabs)/parts.tsx`, `app/(tabs)/ai.tsx`, `app/(tabs)/academy.tsx`, `app/(tabs)/profile.tsx`
+- Create: `src/features/{auth,service,history,parts,ai,academy,profile,notifications}/.gitkeep`
+- Create: `src/shared/types/.gitkeep`, `src/shared/utils/.gitkeep`, `src/shared/lib/.gitkeep`
+- Test: `app/__tests__/tabs-layout.test.tsx`
+
+**Interfaces:**
+- Produces: 6 rutas de tabs navegables (`/(tabs)/service`, `/(tabs)/history`, `/(tabs)/parts`, `/(tabs)/ai`, `/(tabs)/academy`, `/(tabs)/profile`), cada una con un placeholder de texto.
+
+- [ ] **Step 1: Crear las carpetas de features y shared (con `.gitkeep` para que git las trackee vacías)**
+
+```bash
+mkdir -p src/features/auth src/features/service src/features/history src/features/parts src/features/ai src/features/academy src/features/profile src/features/notifications
+mkdir -p src/shared/types src/shared/utils src/shared/lib
+touch src/features/auth/.gitkeep src/features/service/.gitkeep src/features/history/.gitkeep src/features/parts/.gitkeep src/features/ai/.gitkeep src/features/academy/.gitkeep src/features/profile/.gitkeep src/features/notifications/.gitkeep
+touch src/shared/types/.gitkeep src/shared/utils/.gitkeep src/shared/lib/.gitkeep
+```
+
+- [ ] **Step 2: Crear las 6 pantallas placeholder**
+
+```tsx
+// app/(tabs)/service.tsx (repetir el patrón para history.tsx, parts.tsx, ai.tsx, academy.tsx, profile.tsx cambiando el texto)
+import { Text } from "react-native";
+import { Screen } from "../../src/shared/components/Screen";
+
+export default function ServiceScreen() {
+  return (
+    <Screen>
+      <Text className="text-lg font-semibold p-4">Servicio — próximamente</Text>
+    </Screen>
+  );
+}
+```
+
+Repetir para `history.tsx` ("Historial — próximamente"), `parts.tsx` ("Repuestos — próximamente"), `ai.tsx` ("Asistente IA — próximamente"), `academy.tsx` ("Academia — próximamente"), `profile.tsx` ("Perfil — próximamente").
+
+- [ ] **Step 3: Crear el layout de tabs (sin guardas de auth todavía — se agregan en Task 8)**
+
+```tsx
+// app/(tabs)/_layout.tsx
+import { Tabs } from "expo-router";
+
+export default function TabsLayout() {
+  return (
+    <Tabs screenOptions={{ headerShown: false }}>
+      <Tabs.Screen name="service" options={{ title: "Servicio" }} />
+      <Tabs.Screen name="history" options={{ title: "Historial" }} />
+      <Tabs.Screen name="parts" options={{ title: "Repuestos" }} />
+      <Tabs.Screen name="ai" options={{ title: "IA" }} />
+      <Tabs.Screen name="academy" options={{ title: "Academia" }} />
+      <Tabs.Screen name="profile" options={{ title: "Perfil" }} />
+    </Tabs>
+  );
+}
+```
+
+- [ ] **Step 4: Crear un placeholder de sign-in (se implementa de verdad en Task 9)**
+
+```tsx
+// app/(auth)/sign-in.tsx
+import { Text } from "react-native";
+import { Screen } from "../../src/shared/components/Screen";
+
+export default function SignInScreen() {
+  return (
+    <Screen>
+      <Text className="text-lg font-semibold p-4">Iniciar sesión — próximamente</Text>
+    </Screen>
+  );
+}
+```
+
+- [ ] **Step 5: Escribir una prueba que verifique que las 6 tabs están declaradas**
+
+```tsx
+// app/__tests__/tabs-layout.test.tsx
+import { render, screen } from "@testing-library/react-native";
+import TabsLayout from "../(tabs)/_layout";
+
+test("declares all six business module tabs", () => {
+  render(<TabsLayout />);
+  for (const title of ["Servicio", "Historial", "Repuestos", "IA", "Academia", "Perfil"]) {
+    expect(screen.getByText(title)).toBeTruthy();
+  }
+});
+```
+
+- [ ] **Step 6: Correr los tests**
+
+Run: `npm test -- tabs-layout.test.tsx`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: scaffold feature folders and placeholder tab screens"
+```
+
+---
+
+### Task 4: Crear el proyecto Firebase e inicializar el SDK
+
+**Files:**
+- Create: `app.config.ts`, `.env.example`, `src/shared/lib/firebase.ts`
+- Modify: `.gitignore` (agregar `.env`)
+- Test: `src/shared/lib/__tests__/firebase.test.ts`
+
+**Interfaces:**
+- Produces: `import { app, auth, db, storage } from "src/shared/lib/firebase"` — usado por toda tarea futura que hable con Firebase.
+
+- [ ] **Step 1: Crear el proyecto Firebase (nuevo, separado del de fsapp)**
+
+```bash
+npx firebase-tools login
+npx firebase-tools projects:create fs-movil-app --display-name "FS App Movil"
+```
+
+Desde la consola de Firebase (console.firebase.google.com), sobre el proyecto recién creado:
+- Habilitar **Authentication** con los proveedores Email/Password, Google, y Apple.
+- Habilitar **Firestore** (modo producción, cualquier región).
+- Habilitar **Storage**.
+- Registrar una app iOS y una app Android, descargar `GoogleService-Info.plist` y `google-services.json`, y copiar los valores de configuración web (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) para el siguiente paso.
+
+- [ ] **Step 2: Instalar el SDK de Firebase y AsyncStorage**
+
+```bash
+npx expo install firebase @react-native-async-storage/async-storage
+```
+
+- [ ] **Step 3: Declarar las variables de entorno**
+
+```
+# .env.example
+FIREBASE_API_KEY=
+FIREBASE_AUTH_DOMAIN=
+FIREBASE_PROJECT_ID=
+FIREBASE_STORAGE_BUCKET=
+FIREBASE_MESSAGING_SENDER_ID=
+FIREBASE_APP_ID=
+```
+
+Copiar a `.env` con los valores reales del proyecto creado en el Step 1, y agregar `.env` a `.gitignore`.
+
+- [ ] **Step 4: Exponer las variables vía `app.config.ts` (extendiendo el `app.json` generado en Task 1, sin reemplazarlo)**
+
+```ts
+// app.config.ts
+import "dotenv/config";
+import type { ConfigContext, ExpoConfig } from "expo/config";
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  extra: {
+    ...config.extra,
+    firebaseApiKey: process.env.FIREBASE_API_KEY,
+    firebaseAuthDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
+    firebaseStorageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+    firebaseAppId: process.env.FIREBASE_APP_ID,
+  },
+});
+```
+
+Cuando existen ambos `app.json` y `app.config.ts`, Expo pasa el contenido de `app.json` como `config` y usa el resultado de esta función — así se conservan `name`, `slug`, `icon`, `splash`, etc. que generó el scaffold de Task 1.
+
+- [ ] **Step 5: Escribir `src/shared/lib/firebase.ts`**
+
+```ts
+// src/shared/lib/firebase.ts
+import Constants from "expo-constants";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { getStorage } from "firebase/storage";
+import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
+
+const extra = Constants.expoConfig?.extra ?? {};
+
+const firebaseConfig = {
+  apiKey: extra.firebaseApiKey as string,
+  authDomain: extra.firebaseAuthDomain as string,
+  projectId: extra.firebaseProjectId as string,
+  storageBucket: extra.firebaseStorageBucket as string,
+  messagingSenderId: extra.firebaseMessagingSenderId as string,
+  appId: extra.firebaseAppId as string,
+};
+
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+export let auth: ReturnType<typeof getAuth>;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  });
+} catch {
+  auth = getAuth(app);
+}
+
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache(),
+});
+
+export const storage = getStorage(app);
+```
+
+- [ ] **Step 6: Escribir la prueba**
+
+```ts
+// src/shared/lib/__tests__/firebase.test.ts
+jest.mock("firebase/app", () => ({
+  getApps: jest.fn(() => []),
+  getApp: jest.fn(),
+  initializeApp: jest.fn(() => ({ name: "[DEFAULT]" })),
+}));
+jest.mock("firebase/auth", () => ({
+  getAuth: jest.fn(() => ({ mocked: "auth" })),
+  initializeAuth: jest.fn(() => ({ mocked: "auth" })),
+  getReactNativePersistence: jest.fn(),
+}));
+jest.mock("firebase/firestore", () => ({
+  initializeFirestore: jest.fn(() => ({ mocked: "firestore" })),
+  persistentLocalCache: jest.fn(),
+}));
+jest.mock("firebase/storage", () => ({
+  getStorage: jest.fn(() => ({ mocked: "storage" })),
+}));
+
+import { app, auth, db, storage } from "../firebase";
+
+test("initializes app, auth, firestore and storage", () => {
+  expect(app).toBeDefined();
+  expect(auth).toEqual({ mocked: "auth" });
+  expect(db).toEqual({ mocked: "firestore" });
+  expect(storage).toEqual({ mocked: "storage" });
+});
+```
+
+- [ ] **Step 7: Correr los tests**
+
+Run: `npm test -- firebase.test.ts`
+Expected: PASS
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: initialize Firebase SDK against the new fs_movil project"
+```
+
+(`.env` no se commitea — solo `.env.example`.)
+
+---
+
+### Task 5: Reglas de seguridad para `users/{uid}` + pruebas con el emulador
+
+**Files:**
+- Create: `firestore.rules`, `storage.rules`, `firebase.json`
+- Test: `tests/rules/firestore.rules.test.ts`
+
+**Interfaces:**
+- Consumes: ninguno de tareas anteriores.
+- Produces: reglas desplegables (`firebase deploy --only firestore:rules,storage:rules`) que toda tarea futura que agregue colecciones debe extender, nunca debilitar.
+
+- [ ] **Step 1: Instalar las dependencias del emulador**
+
+```bash
+npm install --save-dev @firebase/rules-unit-testing
+```
+
+- [ ] **Step 2: Escribir `firestore.rules`**
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+- [ ] **Step 3: Escribir `storage.rules`**
+
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+- [ ] **Step 4: Escribir `firebase.json`**
+
+```json
+{
+  "firestore": { "rules": "firestore.rules" },
+  "storage": { "rules": "storage.rules" },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "storage": { "port": 9199 }
+  }
+}
+```
+
+- [ ] **Step 5: Escribir la prueba de reglas**
+
+```ts
+// tests/rules/firestore.rules.test.ts
+import {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+  type RulesTestEnvironment,
+} from "@firebase/rules-unit-testing";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import fs from "fs";
+
+let testEnv: RulesTestEnvironment;
+
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: "fs-movil-test",
+    firestore: { rules: fs.readFileSync("firestore.rules", "utf8") },
+  });
+});
+
+afterAll(async () => {
+  await testEnv.cleanup();
+});
+
+afterEach(async () => {
+  await testEnv.clearFirestore();
+});
+
+test("a user can read and write their own profile document", async () => {
+  const aliceDb = testEnv.authenticatedContext("alice").firestore();
+  await assertSucceeds(setDoc(doc(aliceDb, "users/alice"), { email: "alice@example.com" }));
+  await assertSucceeds(getDoc(doc(aliceDb, "users/alice")));
+});
+
+test("a user cannot read another user's profile document", async () => {
+  const aliceDb = testEnv.authenticatedContext("alice").firestore();
+  const bobDb = testEnv.authenticatedContext("bob").firestore();
+  await assertSucceeds(setDoc(doc(aliceDb, "users/alice"), { email: "alice@example.com" }));
+  await assertFails(getDoc(doc(bobDb, "users/alice")));
+});
+
+test("an unauthenticated request is denied", async () => {
+  const anonDb = testEnv.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonDb, "users/alice")));
+});
+```
+
+- [ ] **Step 6: Correr las pruebas contra el emulador**
+
+Run: `npx firebase-tools emulators:exec --only firestore "npx jest tests/rules"`
+Expected: 3 tests, PASS (requiere Java instalado para el emulador)
+
+- [ ] **Step 7: Desplegar las reglas al proyecto real**
+
+```bash
+npx firebase-tools deploy --only firestore:rules,storage:rules --project fs-movil-app
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add real Firestore/Storage security rules for the users collection"
+```
+
+---
+
+### Task 6: Tipo `UserProfile` compartido
+
+**Files:**
+- Create: `src/shared/types/user.ts`
+- Test: `src/shared/types/__tests__/user.test.ts`
+
+**Interfaces:**
+- Produces: `type UserProfile`, `type AuthProvider`, `function createEmptyUserProfile(uid, email, authProvider): UserProfile` — usados por Task 7, 10, y por el futuro plan de Perfil.
+
+- [ ] **Step 1: Escribir el tipo y la fábrica**
+
+```ts
+// src/shared/types/user.ts
+export type AuthProvider = "password" | "google" | "apple";
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  technicianName: string;
+  phone: string;
+  photoUrl: string | null;
+  signatureUrl: string | null;
+  autoSignReports: boolean;
+  company: string;
+  position: string;
+  specialty: string;
+  authProvider: AuthProvider;
+  darkModeEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function createEmptyUserProfile(
+  uid: string,
+  email: string,
+  authProvider: AuthProvider
+): UserProfile {
+  const now = new Date().toISOString();
+  return {
+    uid,
+    email,
+    technicianName: "",
+    phone: "",
+    photoUrl: null,
+    signatureUrl: null,
+    autoSignReports: false,
+    company: "",
+    position: "",
+    specialty: "",
+    authProvider,
+    darkModeEnabled: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+```
+
+- [ ] **Step 2: Escribir la prueba**
+
+```ts
+// src/shared/types/__tests__/user.test.ts
+import { createEmptyUserProfile } from "../user";
+
+test("creates a profile with the given identity and sensible empty defaults", () => {
+  const profile = createEmptyUserProfile("uid-1", "tech@fsapp.com", "google");
+
+  expect(profile.uid).toBe("uid-1");
+  expect(profile.email).toBe("tech@fsapp.com");
+  expect(profile.authProvider).toBe("google");
+  expect(profile.technicianName).toBe("");
+  expect(profile.photoUrl).toBeNull();
+  expect(profile.autoSignReports).toBe(false);
+  expect(profile.darkModeEnabled).toBe(false);
+});
+```
+
+- [ ] **Step 3: Correr los tests**
+
+Run: `npm test -- user.test.ts`
+Expected: PASS
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add shared UserProfile type and factory"
+```
+
+---
+
+### Task 7: Servicio de autenticación (email/password, Google, Apple)
+
+> A partir de esta tarea, la app ya no corre en Expo Go (Google/Apple Sign-In requieren módulos nativos) — se necesita un development build de EAS (`eas build --profile development`) para probar en dispositivo/simulador de aquí en adelante.
+
+**Files:**
+- Create: `src/features/auth/authService.ts`
+- Modify: `app.config.ts` (config plugins)
+- Test: `src/features/auth/__tests__/authService.test.ts`
+
+**Interfaces:**
+- Consumes: `auth` de `src/shared/lib/firebase.ts` (Task 4)
+- Produces: `signUpWithEmail`, `signInWithEmail`, `signInWithGoogle`, `signInWithApple`, `signOutUser` — usados por Task 9 (pantallas) y Task 8 (store).
+
+- [ ] **Step 1: Instalar las librerías nativas de auth**
+
+```bash
+npx expo install @react-native-google-signin/google-signin expo-apple-authentication
+```
+
+- [ ] **Step 2: Agregar los config plugins**
+
+```ts
+// app.config.ts (agregar la clave "plugins" dentro del objeto que retorna la función, junto a "extra")
+plugins: ["@react-native-google-signin/google-signin", "expo-apple-authentication"],
+```
+
+- [ ] **Step 3: Escribir `authService.ts`**
+
+```ts
+// src/features/auth/authService.ts
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithCredential,
+  signOut,
+  GoogleAuthProvider,
+  OAuthProvider,
+  type UserCredential,
+} from "firebase/auth";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
+import { auth } from "../../shared/lib/firebase";
+
+export function signUpWithEmail(email: string, password: string): Promise<UserCredential> {
+  return createUserWithEmailAndPassword(auth, email, password);
+}
+
+export function signInWithEmail(email: string, password: string): Promise<UserCredential> {
+  return signInWithEmailAndPassword(auth, email, password);
+}
+
+export async function signInWithGoogle(): Promise<UserCredential> {
+  await GoogleSignin.hasPlayServices();
+  const { idToken } = await GoogleSignin.signIn();
+  if (!idToken) {
+    throw new Error("Google Sign-In no devolvió un idToken");
+  }
+  const credential = GoogleAuthProvider.credential(idToken);
+  return signInWithCredential(auth, credential);
+}
+
+export async function signInWithApple(): Promise<UserCredential> {
+  const appleCredential = await AppleAuthentication.signInAsync({
+    requestedScopes: [
+      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+      AppleAuthentication.AppleAuthenticationScope.EMAIL,
+    ],
+  });
+  if (!appleCredential.identityToken) {
+    throw new Error("Apple Sign-In no devolvió un identityToken");
+  }
+  const provider = new OAuthProvider("apple.com");
+  const credential = provider.credential({ idToken: appleCredential.identityToken });
+  return signInWithCredential(auth, credential);
+}
+
+export function signOutUser(): Promise<void> {
+  return signOut(auth);
+}
+```
+
+- [ ] **Step 4: Escribir las pruebas (mockeando los SDKs nativos)**
+
+```ts
+// src/features/auth/__tests__/authService.test.ts
+jest.mock("../../../shared/lib/firebase", () => ({ auth: { mocked: "auth" } }));
+jest.mock("firebase/auth", () => ({
+  createUserWithEmailAndPassword: jest.fn(),
+  signInWithEmailAndPassword: jest.fn(),
+  signInWithCredential: jest.fn(),
+  signOut: jest.fn(),
+  GoogleAuthProvider: { credential: jest.fn(() => ({ providerId: "google.com" })) },
+  OAuthProvider: jest.fn().mockImplementation(() => ({
+    credential: jest.fn(() => ({ providerId: "apple.com" })),
+  })),
+}));
+jest.mock("@react-native-google-signin/google-signin", () => ({
+  GoogleSignin: { hasPlayServices: jest.fn(), signIn: jest.fn() },
+}));
+jest.mock("expo-apple-authentication", () => ({
+  signInAsync: jest.fn(),
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+}));
+
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithCredential,
+} from "firebase/auth";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
+import {
+  signUpWithEmail,
+  signInWithEmail,
+  signInWithGoogle,
+  signInWithApple,
+} from "../authService";
+
+test("signUpWithEmail delegates to Firebase with the given credentials", async () => {
+  await signUpWithEmail("tech@fsapp.com", "secret123");
+  expect(createUserWithEmailAndPassword).toHaveBeenCalledWith(
+    { mocked: "auth" },
+    "tech@fsapp.com",
+    "secret123"
+  );
+});
+
+test("signInWithEmail delegates to Firebase with the given credentials", async () => {
+  await signInWithEmail("tech@fsapp.com", "secret123");
+  expect(signInWithEmailAndPassword).toHaveBeenCalledWith(
+    { mocked: "auth" },
+    "tech@fsapp.com",
+    "secret123"
+  );
+});
+
+test("signInWithGoogle exchanges the Google idToken for a Firebase credential", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: "google-id-token" });
+  await signInWithGoogle();
+  expect(signInWithCredential).toHaveBeenCalledWith(
+    { mocked: "auth" },
+    { providerId: "google.com" }
+  );
+});
+
+test("signInWithGoogle throws if Google does not return an idToken", async () => {
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: null });
+  await expect(signInWithGoogle()).rejects.toThrow("idToken");
+});
+
+test("signInWithApple exchanges the Apple identityToken for a Firebase credential", async () => {
+  (AppleAuthentication.signInAsync as jest.Mock).mockResolvedValue({
+    identityToken: "apple-identity-token",
+  });
+  await signInWithApple();
+  expect(signInWithCredential).toHaveBeenCalledWith(
+    { mocked: "auth" },
+    { providerId: "apple.com" }
+  );
+});
+```
+
+- [ ] **Step 5: Correr los tests**
+
+Run: `npm test -- authService.test.ts`
+Expected: PASS (5 tests)
+
+- [ ] **Step 6: Generar un development build para poder probar los flujos nativos manualmente**
+
+```bash
+npx eas build --profile development --platform all
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add auth service for email/password, Google and Apple sign-in"
+```
+
+---
+
+### Task 8: Store de autenticación y guardas de navegación
+
+**Files:**
+- Create: `src/features/auth/useAuthStore.ts`
+- Modify: `app/(auth)/_layout.tsx` (crear), `app/(tabs)/_layout.tsx`
+- Test: `src/features/auth/__tests__/useAuthStore.test.ts`, `app/__tests__/auth-guards.test.tsx`
+
+**Interfaces:**
+- Consumes: `auth` de `src/shared/lib/firebase.ts`
+- Produces: hook `useAuthStore()` devolviendo `{ user: User | null, isLoading: boolean }`, consumido por Task 9 y Task 10.
+
+- [ ] **Step 1: Instalar Zustand**
+
+```bash
+npx expo install zustand
+```
+
+- [ ] **Step 2: Escribir el store**
+
+```ts
+// src/features/auth/useAuthStore.ts
+import { create } from "zustand";
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { auth } from "../../shared/lib/firebase";
+
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+}
+
+export const useAuthStore = create<AuthState>(() => ({
+  user: null,
+  isLoading: true,
+}));
+
+onAuthStateChanged(auth, (user) => {
+  useAuthStore.setState({ user, isLoading: false });
+});
+```
+
+- [ ] **Step 3: Escribir la prueba del store**
+
+```ts
+// src/features/auth/__tests__/useAuthStore.test.ts
+let authStateCallback: (user: unknown) => void;
+
+jest.mock("../../../shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("firebase/auth", () => ({
+  onAuthStateChanged: jest.fn((_auth, callback) => {
+    authStateCallback = callback;
+  }),
+}));
+
+import { useAuthStore } from "../useAuthStore";
+
+test("starts in a loading state with no user", () => {
+  expect(useAuthStore.getState().isLoading).toBe(true);
+  expect(useAuthStore.getState().user).toBeNull();
+});
+
+test("updates the store when Firebase reports an auth state change", () => {
+  const fakeUser = { uid: "uid-1" };
+  authStateCallback(fakeUser);
+  expect(useAuthStore.getState().isLoading).toBe(false);
+  expect(useAuthStore.getState().user).toBe(fakeUser);
+});
+```
+
+- [ ] **Step 4: Crear el layout de auth con guarda de redirección**
+
+```tsx
+// app/(auth)/_layout.tsx
+import { Redirect, Stack } from "expo-router";
+import { useAuthStore } from "../../src/features/auth/useAuthStore";
+
+export default function AuthLayout() {
+  const { user, isLoading } = useAuthStore();
+  if (isLoading) return null;
+  if (user) return <Redirect href="/(tabs)/service" />;
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 5: Agregar la guarda al layout de tabs**
+
+```tsx
+// app/(tabs)/_layout.tsx (agregar al inicio de la función, antes del return)
+import { Redirect, Tabs } from "expo-router";
+import { useAuthStore } from "../../src/features/auth/useAuthStore";
+
+export default function TabsLayout() {
+  const { user, isLoading } = useAuthStore();
+  if (isLoading) return null;
+  if (!user) return <Redirect href="/(auth)/sign-in" />;
+
+  return (
+    <Tabs screenOptions={{ headerShown: false }}>
+      <Tabs.Screen name="service" options={{ title: "Servicio" }} />
+      <Tabs.Screen name="history" options={{ title: "Historial" }} />
+      <Tabs.Screen name="parts" options={{ title: "Repuestos" }} />
+      <Tabs.Screen name="ai" options={{ title: "IA" }} />
+      <Tabs.Screen name="academy" options={{ title: "Academia" }} />
+      <Tabs.Screen name="profile" options={{ title: "Perfil" }} />
+    </Tabs>
+  );
+}
+```
+
+- [ ] **Step 6: Escribir la prueba de las guardas**
+
+```tsx
+// app/__tests__/auth-guards.test.tsx
+import { render } from "@testing-library/react-native";
+
+const redirectMock = jest.fn(() => null);
+jest.mock("expo-router", () => ({
+  Redirect: (props: { href: string }) => redirectMock(props.href),
+  Stack: () => null,
+  Tabs: Object.assign(() => null, { Screen: () => null }),
+}));
+
+import { useAuthStore } from "../../src/features/auth/useAuthStore";
+import TabsLayout from "../(tabs)/_layout";
+import AuthLayout from "../(auth)/_layout";
+
+beforeEach(() => {
+  redirectMock.mockClear();
+});
+
+test("tabs layout redirects to sign-in when there is no user", () => {
+  useAuthStore.setState({ user: null, isLoading: false });
+  render(<TabsLayout />);
+  expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
+});
+
+test("auth layout redirects to the service tab when a user is present", () => {
+  useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
+  render(<AuthLayout />);
+  expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
+});
+```
+
+- [ ] **Step 7: Correr los tests**
+
+Run: `npm test -- useAuthStore.test.ts auth-guards.test.tsx`
+Expected: PASS (4 tests)
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add auth store and route guards for the tabs/auth groups"
+```
+
+---
+
+### Task 9: Pantallas de inicio y registro de sesión
+
+**Files:**
+- Modify: `app/(auth)/sign-in.tsx`
+- Create: `app/(auth)/sign-up.tsx`
+- Test: `app/__tests__/sign-in.test.tsx`
+
+**Interfaces:**
+- Consumes: `signInWithEmail`, `signInWithGoogle`, `signInWithApple` de `src/features/auth/authService.ts` (Task 7)
+
+- [ ] **Step 1: Implementar la pantalla de inicio de sesión**
+
+```tsx
+// app/(auth)/sign-in.tsx
+import { useState } from "react";
+import { Platform, Text, TextInput, TouchableOpacity } from "react-native";
+import { Link } from "expo-router";
+import { Screen } from "../../src/shared/components/Screen";
+import { signInWithEmail, signInWithGoogle, signInWithApple } from "../../src/features/auth/authService";
+
+export default function SignInScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleEmailSignIn() {
+    setError(null);
+    try {
+      await signInWithEmail(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+    }
+  }
+
+  return (
+    <Screen>
+      <Text className="text-2xl font-bold p-4">Iniciar sesión</Text>
+      <TextInput
+        testID="email-input"
+        className="mx-4 mb-2 border border-neutral-300 rounded-lg p-3"
+        placeholder="Correo electrónico"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+      />
+      <TextInput
+        testID="password-input"
+        className="mx-4 mb-2 border border-neutral-300 rounded-lg p-3"
+        placeholder="Contraseña"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+      {error ? <Text className="mx-4 mb-2 text-red-600">{error}</Text> : null}
+      <TouchableOpacity
+        testID="email-sign-in-button"
+        className="mx-4 mb-2 bg-blue-600 rounded-lg p-3"
+        onPress={handleEmailSignIn}
+      >
+        <Text className="text-white text-center font-semibold">Entrar</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        testID="google-sign-in-button"
+        className="mx-4 mb-2 bg-neutral-100 rounded-lg p-3"
+        onPress={() => signInWithGoogle().catch((err) => setError(err.message))}
+      >
+        <Text className="text-center font-semibold">Continuar con Google</Text>
+      </TouchableOpacity>
+      {Platform.OS === "ios" ? (
+        <TouchableOpacity
+          testID="apple-sign-in-button"
+          className="mx-4 mb-2 bg-black rounded-lg p-3"
+          onPress={() => signInWithApple().catch((err) => setError(err.message))}
+        >
+          <Text className="text-white text-center font-semibold">Continuar con Apple</Text>
+        </TouchableOpacity>
+      ) : null}
+      <Link href="/(auth)/sign-up" className="mx-4 text-center text-blue-600">
+        Crear una cuenta nueva
+      </Link>
+    </Screen>
+  );
+}
+```
+
+- [ ] **Step 2: Implementar la pantalla de registro (mismo patrón, usando `signUpWithEmail`)**
+
+```tsx
+// app/(auth)/sign-up.tsx
+import { useState } from "react";
+import { Text, TextInput, TouchableOpacity } from "react-native";
+import { Screen } from "../../src/shared/components/Screen";
+import { signUpWithEmail } from "../../src/features/auth/authService";
+
+export default function SignUpScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSignUp() {
+    setError(null);
+    try {
+      await signUpWithEmail(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo crear la cuenta");
+    }
+  }
+
+  return (
+    <Screen>
+      <Text className="text-2xl font-bold p-4">Crear cuenta</Text>
+      <TextInput
+        testID="email-input"
+        className="mx-4 mb-2 border border-neutral-300 rounded-lg p-3"
+        placeholder="Correo electrónico"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+      />
+      <TextInput
+        testID="password-input"
+        className="mx-4 mb-2 border border-neutral-300 rounded-lg p-3"
+        placeholder="Contraseña"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+      {error ? <Text className="mx-4 mb-2 text-red-600">{error}</Text> : null}
+      <TouchableOpacity
+        testID="sign-up-button"
+        className="mx-4 mb-2 bg-blue-600 rounded-lg p-3"
+        onPress={handleSignUp}
+      >
+        <Text className="text-white text-center font-semibold">Registrarme</Text>
+      </TouchableOpacity>
+    </Screen>
+  );
+}
+```
+
+- [ ] **Step 3: Escribir la prueba de la pantalla de inicio de sesión**
+
+```tsx
+// app/__tests__/sign-in.test.tsx
+import { fireEvent, render, screen } from "@testing-library/react-native";
+
+jest.mock("../../src/features/auth/authService", () => ({
+  signInWithEmail: jest.fn(() => Promise.resolve()),
+  signInWithGoogle: jest.fn(() => Promise.resolve()),
+  signInWithApple: jest.fn(() => Promise.resolve()),
+}));
+
+import { signInWithEmail } from "../../src/features/auth/authService";
+import SignInScreen from "../(auth)/sign-in";
+
+test("submits the entered email and password", async () => {
+  render(<SignInScreen />);
+  fireEvent.changeText(screen.getByTestId("email-input"), "tech@fsapp.com");
+  fireEvent.changeText(screen.getByTestId("password-input"), "secret123");
+  fireEvent.press(screen.getByTestId("email-sign-in-button"));
+
+  await new Promise(process.nextTick);
+  expect(signInWithEmail).toHaveBeenCalledWith("tech@fsapp.com", "secret123");
+});
+```
+
+- [ ] **Step 4: Correr los tests**
+
+Run: `npm test -- sign-in.test.tsx`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add sign-in and sign-up screens"
+```
+
+---
+
+### Task 10: Crear el perfil en Firestore al primer login + pantalla de perfil mínima
+
+**Files:**
+- Create: `src/features/profile/profileRepository.ts`
+- Modify: `app/(tabs)/profile.tsx`
+- Test: `src/features/profile/__tests__/profileRepository.test.ts`
+
+**Interfaces:**
+- Consumes: `db` de `src/shared/lib/firebase.ts`, `createEmptyUserProfile` de `src/shared/types/user.ts`, `signOutUser` de `src/features/auth/authService.ts`
+- Produces: `ensureUserProfile(uid, email, authProvider): Promise<UserProfile>` — consumido por el futuro plan de Perfil de usuario.
+
+- [ ] **Step 1: Escribir `profileRepository.ts`**
+
+```ts
+// src/features/profile/profileRepository.ts
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "../../shared/lib/firebase";
+import { createEmptyUserProfile, type AuthProvider, type UserProfile } from "../../shared/types/user";
+
+export async function ensureUserProfile(
+  uid: string,
+  email: string,
+  authProvider: AuthProvider
+): Promise<UserProfile> {
+  const ref = doc(db, "users", uid);
+  const snapshot = await getDoc(ref);
+
+  if (snapshot.exists()) {
+    return snapshot.data() as UserProfile;
+  }
+
+  const profile = createEmptyUserProfile(uid, email, authProvider);
+  await setDoc(ref, profile);
+  return profile;
+}
+```
+
+- [ ] **Step 2: Escribir la prueba (contra el emulador de Firestore, reutilizando el `firebase.json` de Task 5)**
+
+```ts
+// src/features/profile/__tests__/profileRepository.test.ts
+import {
+  initializeTestEnvironment,
+  type RulesTestEnvironment,
+} from "@firebase/rules-unit-testing";
+import { doc, setDoc } from "firebase/firestore";
+import fs from "fs";
+import { ensureUserProfile } from "../profileRepository";
+
+jest.mock("../../../shared/lib/firebase", () => ({ db: undefined }));
+
+let testEnv: RulesTestEnvironment;
+
+beforeAll(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: "fs-movil-test",
+    firestore: { rules: fs.readFileSync("firestore.rules", "utf8") },
+  });
+});
+
+afterAll(async () => {
+  await testEnv.cleanup();
+});
+
+afterEach(async () => {
+  await testEnv.clearFirestore();
+});
+
+test("creates a profile document on first login", async () => {
+  const aliceDb = testEnv.authenticatedContext("alice").firestore();
+  jest.requireMock("../../../shared/lib/firebase").db = aliceDb;
+
+  const profile = await ensureUserProfile("alice", "alice@example.com", "password");
+
+  expect(profile.uid).toBe("alice");
+  expect(profile.email).toBe("alice@example.com");
+});
+
+test("does not overwrite an existing profile document", async () => {
+  const aliceDb = testEnv.authenticatedContext("alice").firestore();
+  jest.requireMock("../../../shared/lib/firebase").db = aliceDb;
+  await setDoc(doc(aliceDb, "users/alice"), {
+    uid: "alice",
+    email: "alice@example.com",
+    technicianName: "Alice Técnica",
+  });
+
+  const profile = await ensureUserProfile("alice", "alice@example.com", "password");
+
+  expect(profile.technicianName).toBe("Alice Técnica");
+});
+```
+
+- [ ] **Step 3: Correr las pruebas contra el emulador**
+
+Run: `npx firebase-tools emulators:exec --only firestore "npx jest profileRepository.test.ts"`
+Expected: 2 tests, PASS
+
+- [ ] **Step 4: Llamar a `ensureUserProfile` cuando cambia el estado de auth**
+
+```ts
+// src/features/auth/useAuthStore.ts (agregar dentro del callback de onAuthStateChanged, después de useAuthStore.setState)
+import { ensureUserProfile } from "../profile/profileRepository";
+
+// dentro de onAuthStateChanged(auth, (user) => { ... }):
+if (user) {
+  const provider = user.providerData[0]?.providerId.includes("google")
+    ? "google"
+    : user.providerData[0]?.providerId.includes("apple")
+      ? "apple"
+      : "password";
+  void ensureUserProfile(user.uid, user.email ?? "", provider);
+}
+```
+
+- [ ] **Step 5: Implementar la pantalla de perfil mínima**
+
+```tsx
+// app/(tabs)/profile.tsx
+import { Text, TouchableOpacity } from "react-native";
+import { Screen } from "../../src/shared/components/Screen";
+import { useAuthStore } from "../../src/features/auth/useAuthStore";
+import { signOutUser } from "../../src/features/auth/authService";
+
+export default function ProfileScreen() {
+  const user = useAuthStore((state) => state.user);
+
+  return (
+    <Screen>
+      <Text className="text-lg font-semibold p-4">{user?.email}</Text>
+      <TouchableOpacity
+        testID="sign-out-button"
+        className="mx-4 bg-neutral-200 rounded-lg p-3"
+        onPress={() => signOutUser()}
+      >
+        <Text className="text-center font-semibold">Cerrar sesión</Text>
+      </TouchableOpacity>
+    </Screen>
+  );
+}
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: create user profile document on first login, add minimal profile screen"
+```
+
+---
+
+### Task 11: Verificación manual de punta a punta
+
+No hay código nuevo en esta tarea — es la validación de que todo lo anterior funciona junto en un dispositivo/simulador real.
+
+- [ ] **Step 1: Levantar el development build**
+
+```bash
+npx expo start --dev-client
+```
+
+- [ ] **Step 2: Verificar el flujo de registro**
+
+Abrir la app, ir a "Crear una cuenta nueva", registrar un usuario con email/password nuevo. Verificar que redirige a la tab "Servicio".
+
+- [ ] **Step 3: Verificar el documento de Firestore**
+
+En la consola de Firebase del proyecto `fs-movil-app`, confirmar que existe `users/{uid}` con el email correcto.
+
+- [ ] **Step 4: Verificar cierre e inicio de sesión**
+
+Ir a la tab "Perfil", tocar "Cerrar sesión", confirmar que redirige a "Iniciar sesión". Volver a entrar con el mismo email/password y confirmar que llega de nuevo a "Servicio" sin crear un segundo documento de usuario.
+
+- [ ] **Step 5: Verificar Google Sign-In**
+
+Tocar "Continuar con Google" con una cuenta de Google real, confirmar que crea/reutiliza correctamente `users/{uid}` usando el UID de Firebase Auth.
+
+- [ ] **Step 6: Verificar Sign in with Apple (solo iOS)**
+
+Repetir con "Continuar con Apple" en un dispositivo/simulador iOS.
+
+- [ ] **Step 7: Confirmar que las reglas de seguridad bloquean acceso cruzado**
+
+Ya cubierto por las pruebas automatizadas de Task 5 — no requiere pasos manuales adicionales, se deja como referencia de que el criterio de aceptación de seguridad ya está verificado.
