@@ -1461,6 +1461,8 @@ test("does not overwrite an existing profile document", async () => {
 Run: `npx firebase-tools emulators:exec --only firestore "npx jest tests/profile"`
 Expected: 2 tests, PASS
 
+**Nota**: este repo tiene Java 1.8 y el emulador de Firestore requiere Java 21+ (mismo bloqueo ya conocido de Task 5) — si el emulador no arranca por esto, no es un bloqueo nuevo, es el mismo gap ya documentado. Reporta el archivo `tests/profile/profileRepository.test.ts` escrito (Step 2) y sigue con el resto de la tarea (Steps 4-9, que no dependen del emulador); no intentes instalar Java ni buscar workarounds.
+
 - [ ] **Step 4: Escribir la prueba del efecto que crea el perfil en `src/app/_layout.tsx`**
 
 ```tsx
