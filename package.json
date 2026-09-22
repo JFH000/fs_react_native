@@ -63,7 +63,10 @@
         "testPathIgnorePatterns": [
           "/node_modules/",
           "[/\\\\]tests[/\\\\]"
-        ]
+        ],
+        "moduleNameMapper": {
+          "\\.css$": "<rootDir>/__mocks__/styleMock.js"
+        }
       },
       {
         "displayName": "node",
