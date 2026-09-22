@@ -11,6 +11,12 @@ jest.mock("expo-router", () => {
   };
 });
 
+jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
+jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
+jest.mock("../../features/auth/useAuthStore", () => ({
+  useAuthStore: () => ({ user: { uid: "uid-1" }, isLoading: false }),
+}));
+
 import TabsLayout from "../(tabs)/_layout";
 
 test("declares all six business module tabs", async () => {
