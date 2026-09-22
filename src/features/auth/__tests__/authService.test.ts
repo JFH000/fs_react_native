@@ -50,7 +50,10 @@ test("signInWithEmail delegates to Firebase with the given credentials", async (
 });
 
 test("signInWithGoogle exchanges the Google idToken for a Firebase credential", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: "google-id-token" });
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({
+    type: "success",
+    data: { idToken: "google-id-token" },
+  });
   await signInWithGoogle();
   expect(signInWithCredential).toHaveBeenCalledWith(
     { mocked: "auth" },
@@ -59,7 +62,7 @@ test("signInWithGoogle exchanges the Google idToken for a Firebase credential", 
 });
 
 test("signInWithGoogle throws if Google does not return an idToken", async () => {
-  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ idToken: null });
+  (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: "cancelled", data: null });
   await expect(signInWithGoogle()).rejects.toThrow("idToken");
 });
 

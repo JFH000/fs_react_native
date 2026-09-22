@@ -21,7 +21,8 @@ export function signInWithEmail(email: string, password: string): Promise<UserCr
 
 export async function signInWithGoogle(): Promise<UserCredential> {
   await GoogleSignin.hasPlayServices();
-  const { idToken } = await GoogleSignin.signIn();
+  const response = await GoogleSignin.signIn();
+  const idToken = response.data?.idToken;
   if (!idToken) {
     throw new Error("Google Sign-In no devolvió un idToken");
   }
