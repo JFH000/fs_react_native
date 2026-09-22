@@ -1076,7 +1076,7 @@ import { render } from "@testing-library/react-native";
 jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
-const mockRedirect = jest.fn(() => null);
+const mockRedirect = jest.fn((_href: string) => null);
 jest.mock("expo-router", () => ({
   Redirect: (props: { href: string }) => mockRedirect(props.href),
   Stack: () => null,
@@ -1138,7 +1138,7 @@ import { render } from "@testing-library/react-native";
 jest.mock("../../shared/lib/firebase", () => ({ auth: {} }));
 jest.mock("firebase/auth", () => ({ onAuthStateChanged: jest.fn() }));
 
-const mockRedirect = jest.fn(() => null);
+const mockRedirect = jest.fn((_href: string) => null);
 jest.mock("expo-router", () => ({
   Redirect: (props: { href: string }) => mockRedirect(props.href),
 }));
