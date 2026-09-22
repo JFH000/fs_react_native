@@ -2,7 +2,7 @@
 
 ## 1. Propósito
 
-Construir la versión móvil (iOS + Android, publicable en App Store y Play Store) de FS App, la plataforma de gestión de servicios HVAC-R hoy implementada como app web en `fsapp` (React + Vite + Express + Firebase). Este documento cubre el alcance completo: todos los módulos de negocio de fsapp, portados a un proyecto Expo nuevo e independiente (`fs_movil`), con un backend propio (Firebase project separado + Cloud Functions).
+Construir la versión móvil (iOS + Android, publicable en App Store y Play Store) de FS App, la plataforma de gestión de servicios HVAC-R hoy implementada como app web en `fsapp` (React + Vite + Express + Firebase). Este documento cubre el alcance completo: todos los módulos de negocio de fsapp, portados a un proyecto Expo nuevo e independiente (`fs_movil`), con un backend propio (Firebase project separado, en el plan **Spark** gratuito, + Cloudflare Workers para lo que necesita un servidor).
 
 Este no es un port 1:1 literal: donde la investigación del código actual de fsapp encontró funcionalidad rota, insegura o decorativa, este diseño la sanea en vez de replicarla, porque el costo de arreglarlo ahora (proyecto nuevo) es mucho menor que después de publicar en las tiendas.
 
@@ -81,8 +81,9 @@ fs_movil/
       utils/                  # hvacCalculations.ts, pdf template builder, unit converters
       lib/                    # firebase.ts (init), firestore helpers
       components/             # UI compartida (botones, cards, etc.)
-  functions/                  # Cloud Functions (proyecto Firebase separado)
 ```
+
+El proxy de IA/Hostinger vive en un repo/proyecto de Cloudflare Workers aparte (no dentro de `fs_movil/`), igual que un backend cualquiera — ver Sección 7.
 
 ## 5. Autenticación
 
@@ -105,28 +106,30 @@ Se elimina el patrón de doble escritura de fsapp. Cada colección es única, co
 | ~~`fsParts/{id}`~~ | — | **Eliminada** — el catálogo vive solo vía Hostinger + fallback local, esta colección estaba casi sin uso en fsapp |
 | ~~`telegram_codes`, `telegram_links`~~ | — | **Eliminadas** (fuera de alcance, y estaban rotas en fsapp) |
 
-**Reglas de seguridad reales** (Firestore + Storage): exigir `request.auth.uid == resource.data.ownerId` para leer/escribir visitas, activos, pedidos y conversaciones IA; `request.auth.uid == userId` para perfil y progreso de academia. Sin autenticación válida, sin acceso — a diferencia de fsapp, donde hoy `allow read, write: if true` aplica a todo.
+**Reglas de seguridad reales** (Firestore): exigir `request.auth.uid == resource.data.ownerId` para leer/escribir visitas, activos, pedidos y conversaciones IA; `request.auth.uid == userId` para perfil y progreso de academia. Sin autenticación válida, sin acceso — a diferencia de fsapp, donde hoy `allow read, write: if true` aplica a todo.
 
-**Fotos**: se suben a Firebase Storage (`users/{uid}/visits/{visitId}/...`, `users/{uid}/assets/{assetId}/...`) con reglas espejo a las de Firestore; los documentos guardan solo la URL de descarga, no el Data URL embebido.
+**Fotos**: el proyecto Firebase se mantiene en el plan **Spark** (gratuito) — Cloud Storage for Firebase requiere el plan Blaze en proyectos nuevos desde oct/2024, así que las fotos NO se suben a Firebase Storage. Se usa **Cloudinary** (capa gratuita: 25 GB de storage + 25 GB de banda/mes, permanente) con un "unsigned upload preset" — el cliente sube la imagen directo a Cloudinary por HTTPS sin pasar por ningún backend propio, y Cloudinary devuelve la URL pública. Los documentos de Firestore guardan solo esa URL (nunca el Data URL embebido, a diferencia de fsapp hoy). El preset de Cloudinary se configura para aceptar solo imágenes y con un límite de tamaño razonable, ya que un "unsigned preset" es público por diseño (cualquiera con el nombre del preset puede subir — no hay secretos que proteger en el cliente, pero sí conviene limitar tipo/tamaño de archivo desde la configuración del preset).
 
-**Cupones de repuestos**: se mueven de estar hardcodeados en el bundle del cliente (como en fsapp: `FSCLIMA10`, `HVACVIP`, `FS2026`, `BIENVENIDO`) a un documento validado por Cloud Function, para que no sean legibles simplemente abriendo el APK.
+**Cupones de repuestos**: se mueven de estar hardcodeados en el bundle del cliente (como en fsapp: `FSCLIMA10`, `HVACVIP`, `FS2026`, `BIENVENIDO`) a un documento validado por el Worker de `validate-coupon` (Sección 7), para que no sean legibles simplemente abriendo el APK.
 
-## 7. Backend (Cloud Functions, proyecto Firebase separado)
+## 7. Backend (Cloudflare Workers)
 
-Cloud Functions *callable* (el SDK adjunta el ID token de Firebase Auth automáticamente, sin headers custom):
+**Cambio respecto a la primera versión de este spec**: originalmente esta sección proponía Firebase Cloud Functions. Cloud Functions siempre requiere el plan Blaze (cuenta de facturación vinculada), incluso si el uso real cae dentro de la cuota gratuita — el usuario decidió mantener el proyecto Firebase en el plan Spark (gratuito, sin tarjeta), así que el proxy de IA/Hostinger se mueve a **Cloudflare Workers** (capa gratuita: 100,000 requests/día, permanente, sin tarjeta para empezar). Es un repo/proyecto separado de `fs_movil` (ver Sección 4), no vive dentro del proyecto Firebase.
 
-| Función | Reemplaza en fsapp | Estado actual |
+| Endpoint (Worker route) | Reemplaza en fsapp | Estado actual |
 |---|---|---|
-| `improveText` | `/api/improve-text` | Ya funciona — se porta la lógica |
-| `chatWithAI` | `/api/chat` | **No existe hoy** — se construye real (contexto de activo, historial, adjuntos multimodal vía Gemini) |
-| `generateRecommendation` | `/api/generate-recommendation` | **No existe hoy** — se construye real |
-| `academyTutor` | `/api/gemini/academy-tutor` | **No existe hoy** — se construye real (5 modos: explicar simple, herramientas de campo, caso real, quiz, guía principiante) |
-| `hostingerSync` / `hostingerProductDetail` | igual en fsapp | Se porta la versión final evolucionada de `server.ts` (Store ID correcto, conversión de precios, sin los hacks intermedios de los 13 scripts `patch-*`/`fix-*`) |
-| `validateCoupon` | (nuevo) | Reemplaza la validación hardcodeada del cliente |
+| `POST /improve-text` | `/api/improve-text` | Ya funciona — se porta la lógica |
+| `POST /chat` | `/api/chat` | **No existe hoy** — se construye real (contexto de activo, historial, adjuntos multimodal vía Gemini) |
+| `POST /generate-recommendation` | `/api/generate-recommendation` | **No existe hoy** — se construye real |
+| `POST /academy-tutor` | `/api/gemini/academy-tutor` | **No existe hoy** — se construye real (5 modos: explicar simple, herramientas de campo, caso real, quiz, guía principiante) |
+| `GET /hostinger-sync`, `GET /hostinger-product-detail` | igual en fsapp | Se porta la versión final evolucionada de `server.ts` (Store ID correcto, conversión de precios, sin los hacks intermedios de los 13 scripts `patch-*`/`fix-*`) |
+| `POST /validate-coupon` | (nuevo) | Reemplaza la validación hardcodeada del cliente |
 
-**Secretos**: `GEMINI_API_KEY` y `HOSTINGER_API_TOKEN` como secrets de Cloud Functions, nunca en el cliente.
+**Autenticación de las peticiones**: a diferencia de una Cloud Function *callable* (que adjunta el ID token automáticamente), aquí el cliente manda el ID token de Firebase Auth explícito en el header `Authorization: Bearer <idToken>`, y cada Worker lo verifica contra las claves públicas de Google (JWKS) antes de procesar la petición — sin necesitar el SDK completo de Firebase Admin, solo una librería de verificación de JWT (ej. `jose`), que sí corre bien en el runtime de Workers.
 
-**Firebase App Check** (Play Integrity en Android, App Attest en iOS) sobre las funciones callable, para evitar que alguien fuera de la app real consuma la cuota de Gemini/Hostinger.
+**Secretos**: `GEMINI_API_KEY` y `HOSTINGER_API_TOKEN` como Worker secrets (`wrangler secret put`), nunca en el cliente.
+
+**Protección anti-abuso**: sin Firebase App Check (es específico de Cloud Functions/Firebase), la defensa es la verificación del ID token de Firebase Auth en cada request (ya obligatoria arriba) — cualquier llamada sin un token válido de un usuario real autenticado se rechaza antes de tocar Gemini/Hostinger. Si el abuso por usuarios autenticados reales se vuelve un problema, se puede añadir rate-limiting por `uid` (Cloudflare Workers KV o Durable Objects) más adelante.
 
 **Catálogo de repuestos offline**: `fsparts_full_catalog.json` (230 productos) se empaqueta como asset local en la app — navegable sin internet desde el primer arranque. `hostingerSync` lo refresca en segundo plano cuando hay conexión.
 
@@ -134,7 +137,7 @@ Cloud Functions *callable* (el SDK adjunta el ID token de Firebase Auth automát
 
 ### Wizard de servicio + Historial de equipos
 - El wizard de 9 pasos pasa a un flujo de pantallas (Expo Router) con un store de Zustand para el borrador, persistido en AsyncStorage (reemplaza el autoguardado a `localStorage` cada 800ms de fsapp).
-- Evidencias fotográficas: `expo-image-picker`/`expo-camera`, subida real a Storage. Se eliminan los botones de "foto demo" del flujo de producción.
+- Evidencias fotográficas: `expo-image-picker`/`expo-camera`, subida real a Cloudinary (ver Sección 6). Se eliminan los botones de "foto demo" del flujo de producción.
 - Escaneo QR: escáner de códigos de `expo-camera`, con el mismo fallback de pegar texto/JSON manual que fsapp.
 - Firma: `react-native-signature-canvas`, solo dibujo (sin el estudio de remoción de fondo). Auto-firma si el perfil ya tiene una guardada.
 - Ubicación: `expo-location` para captura automática de coordenadas + geocoding inverso (Nominatim, gratis) para mostrar dirección + chips de zonas preestablecidas — sin mapa interactivo.
@@ -162,7 +165,7 @@ Cloud Functions *callable* (el SDK adjunta el ID token de Firebase Auth automát
 
 ### Perfil de usuario
 - Formularios (personal, laboral, preferencias, estadísticas, seguridad) sobre `users/{uid}`.
-- Compresión de imágenes con `expo-image-manipulator`.
+- Compresión de imágenes con `expo-image-manipulator` antes de subir a Cloudinary (avatar, portada, firma).
 - Se eliminan las pestañas de Telegram y Google Workspace (fuera de alcance) y el toggle de biometría (feature eliminada, no solo desconectada).
 
 ### Notificaciones
@@ -171,7 +174,7 @@ Cloud Functions *callable* (el SDK adjunta el ID token de Firebase Auth automát
 ## 9. Manejo de errores y offline
 
 - Firestore: la persistencia local del SDK encola escrituras sin conexión y sincroniza al reconectar automáticamente; el estado de sincronización se deriva de la metadata real de `onSnapshot` (`fromCache`), no de un toggle simulado.
-- Cloud Functions (IA, Hostinger): si fallan por red, se muestra un estado de error real con opción de reintentar — **no** se fabrica una respuesta que aparente ser válida (a diferencia del fallback actual de fsapp, que simula una respuesta de IA genuina). El catálogo de repuestos sí conserva su JSON local empaquetado como último recurso, porque es un catálogo real congelado, no una respuesta inventada.
+- Cloudflare Workers (IA, Hostinger): si fallan por red, se muestra un estado de error real con opción de reintentar — **no** se fabrica una respuesta que aparente ser válida (a diferencia del fallback actual de fsapp, que simula una respuesta de IA genuina). El catálogo de repuestos sí conserva su JSON local empaquetado como último recurso, porque es un catálogo real congelado, no una respuesta inventada.
 
 ## 10. Testing
 
