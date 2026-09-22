@@ -19,6 +19,13 @@ export function generateConsecutivo(existingVisitsCount: number, now: Date = new
   return `FS-${now.getFullYear()}-${sequence}`;
 }
 
+export function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 interface ServiceVisitDraft {
   consecutivo: string;
   date: string;
@@ -37,7 +44,7 @@ interface ServiceVisitDraft {
 }
 
 function createEmptyDraft(consecutivo: string, now: Date = new Date()): ServiceVisitDraft {
-  const date = now.toISOString().split("T")[0];
+  const date = toLocalDateString(now);
   const startTime = now.toTimeString().slice(0, 5);
   const endTime = new Date(now.getTime() + 60 * 60 * 1000).toTimeString().slice(0, 5);
   return {

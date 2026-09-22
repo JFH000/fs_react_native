@@ -2,7 +2,7 @@ jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock")
 );
 
-import { useServiceWizardStore, generateConsecutivo, WIZARD_STEP_COUNT } from "../useServiceWizardStore";
+import { useServiceWizardStore, generateConsecutivo, WIZARD_STEP_COUNT, toLocalDateString } from "../useServiceWizardStore";
 
 beforeEach(() => {
   useServiceWizardStore.getState().resetDraft();
@@ -10,6 +10,10 @@ beforeEach(() => {
 
 test("generateConsecutivo pads the sequence and uses the given year", () => {
   expect(generateConsecutivo(4, new Date(2026, 0, 1))).toBe("FS-2026-0005");
+});
+
+test("toLocalDateString derives date from local time, not UTC", () => {
+  expect(toLocalDateString(new Date(2026, 5, 15, 23, 30))).toBe("2026-06-15");
 });
 
 test("startNewVisit seeds a draft with an auto-generated consecutivo and no GPS", () => {
