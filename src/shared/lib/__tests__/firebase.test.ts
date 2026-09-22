@@ -10,15 +10,11 @@ jest.mock("firebase/firestore", () => ({
   initializeFirestore: jest.fn(() => ({ mocked: "firestore" })),
   persistentLocalCache: jest.fn(),
 }));
-jest.mock("firebase/storage", () => ({
-  getStorage: jest.fn(() => ({ mocked: "storage" })),
-}));
 
-import { app, auth, db, storage } from "../firebase";
+import { app, auth, db } from "../firebase";
 
-test("initializes app, auth, firestore and storage", () => {
+test("initializes app, auth and firestore", () => {
   expect(app).toBeDefined();
   expect(auth).toEqual({ mocked: "auth" });
   expect(db).toEqual({ mocked: "firestore" });
-  expect(storage).toEqual({ mocked: "storage" });
 });
