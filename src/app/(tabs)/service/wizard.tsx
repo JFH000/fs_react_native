@@ -4,6 +4,7 @@ import { Screen } from "../../../shared/components/Screen";
 import { useServiceWizardStore, WIZARD_STEP_COUNT } from "../../../features/service/useServiceWizardStore";
 import { StepPlaceholder } from "../../../features/service/steps/StepPlaceholder";
 import { Step1VisitData } from "../../../features/service/steps/Step1VisitData";
+import { Step2CustomerData } from "../../../features/service/steps/Step2CustomerData";
 
 const STEP_TITLES = [
   "Datos de Visita",
@@ -19,6 +20,7 @@ const STEP_TITLES = [
 
 function StepBody({ step }: { step: number }) {
   if (step === 1) return <Step1VisitData />;
+  if (step === 2) return <Step2CustomerData />;
   return <StepPlaceholder title={STEP_TITLES[step - 1]} />;
 }
 
