@@ -162,7 +162,16 @@ const config = getDefaultConfig(__dirname);
 module.exports = withNativeWind(config, { input: "./src/global.css" });
 ```
 
-- [ ] **Step 5: Escribir el componente `Screen` con NativeWind**
+- [ ] **Step 5: Declarar los tipos de NativeWind para que `className` type-checke en componentes RN**
+
+Sin esto, `tsc --noEmit` falla en cualquier componente que use `className` (TypeScript no conoce esa prop en los componentes de React Native):
+
+```ts
+// nativewind-env.d.ts (en la raíz del proyecto)
+/// <reference types="nativewind/types" />
+```
+
+- [ ] **Step 6: Escribir el componente `Screen` con NativeWind**
 
 ```tsx
 // src/shared/components/Screen.tsx
@@ -178,7 +187,9 @@ export function Screen({ children }: PropsWithChildren) {
 }
 ```
 
-- [ ] **Step 6: Escribir la prueba**
+- [ ] **Step 7: Escribir la prueba**
+
+`@testing-library/react-native` (la versión instalada en Task 1, v14) tiene `render()` async — hay que usar `await`:
 
 ```tsx
 // src/shared/components/__tests__/Screen.test.tsx
@@ -186,8 +197,8 @@ import { render, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { Screen } from "../Screen";
 
-test("renders its children inside the safe area", () => {
-  render(
+test("renders its children inside the safe area", async () => {
+  await render(
     <Screen>
       <Text>contenido</Text>
     </Screen>
@@ -197,7 +208,7 @@ test("renders its children inside the safe area", () => {
 });
 ```
 
-- [ ] **Step 7: Importar `global.css` en el layout raíz y envolverlo en `SafeAreaProvider`**
+- [ ] **Step 8: Importar `global.css` en el layout raíz y envolverlo en `SafeAreaProvider`**
 
 `SafeAreaView` de `react-native-safe-area-context` necesita un `SafeAreaProvider` ancestro para calcular los insets correctamente en dispositivos con notch/isla dinámica — sin él, `Screen` funcionaría mal en el dispositivo real aunque su prueba unitaria pase. Después de la limpieza de Task 1, `src/app/_layout.tsx` es un `RootLayout` mínimo (`return <Slot />;`) — envolver ese `<Slot />` en `<SafeAreaProvider>`:
 
@@ -323,8 +334,8 @@ jest.mock("expo-router", () => ({
 
 import TabsLayout from "../(tabs)/_layout";
 
-test("declares all six business module tabs", () => {
-  render(<TabsLayout />);
+test("declares all six business module tabs", async () => {
+  await render(<TabsLayout />);
   for (const title of ["Servicio", "Historial", "Repuestos", "IA", "Academia", "Perfil"]) {
     expect(screen.getByText(title)).toBeTruthy();
   }
@@ -1040,15 +1051,15 @@ beforeEach(() => {
   redirectMock.mockClear();
 });
 
-test("tabs layout redirects to sign-in when there is no user", () => {
+test("tabs layout redirects to sign-in when there is no user", async () => {
   useAuthStore.setState({ user: null, isLoading: false });
-  render(<TabsLayout />);
+  await render(<TabsLayout />);
   expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
 });
 
-test("auth layout redirects to the service tab when a user is present", () => {
+test("auth layout redirects to the service tab when a user is present", async () => {
   useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
-  render(<AuthLayout />);
+  await render(<AuthLayout />);
   expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
 });
 ```
@@ -1099,15 +1110,15 @@ beforeEach(() => {
   redirectMock.mockClear();
 });
 
-test("redirects to sign-in when there is no user", () => {
+test("redirects to sign-in when there is no user", async () => {
   useAuthStore.setState({ user: null, isLoading: false });
-  render(<IndexScreen />);
+  await render(<IndexScreen />);
   expect(redirectMock).toHaveBeenCalledWith("/(auth)/sign-in");
 });
 
-test("redirects to the service tab when a user is present", () => {
+test("redirects to the service tab when a user is present", async () => {
   useAuthStore.setState({ user: { uid: "uid-1" } as never, isLoading: false });
-  render(<IndexScreen />);
+  await render(<IndexScreen />);
   expect(redirectMock).toHaveBeenCalledWith("/(tabs)/service");
 });
 ```
@@ -1284,7 +1295,7 @@ import { signInWithEmail } from "../../features/auth/authService";
 import SignInScreen from "../(auth)/sign-in";
 
 test("submits the entered email and password", async () => {
-  render(<SignInScreen />);
+  await render(<SignInScreen />);
   fireEvent.changeText(screen.getByTestId("email-input"), "tech@fsapp.com");
   fireEvent.changeText(screen.getByTestId("password-input"), "secret123");
   fireEvent.press(screen.getByTestId("email-sign-in-button"));
@@ -1435,18 +1446,18 @@ beforeEach(() => {
   fakeAuthStore.setState({ user: null, isLoading: false });
 });
 
-test("does not create a profile while there is no user", () => {
-  render(<RootLayout />);
+test("does not create a profile while there is no user", async () => {
+  await render(<RootLayout />);
   expect(ensureUserProfileMock).not.toHaveBeenCalled();
 });
 
-test("ensures a profile once a user is present", () => {
-  const view = render(<RootLayout />);
+test("ensures a profile once a user is present", async () => {
+  const view = await render(<RootLayout />);
   fakeAuthStore.setState({
     user: { uid: "uid-1", email: "tech@fsapp.com", providerData: [{ providerId: "google.com" }] },
     isLoading: false,
   });
-  view.rerender(<RootLayout />);
+  await view.rerender(<RootLayout />);
   expect(ensureUserProfileMock).toHaveBeenCalledWith("uid-1", "tech@fsapp.com", "google");
 });
 ```
